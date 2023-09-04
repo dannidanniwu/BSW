@@ -3,13 +3,13 @@
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
 library(simstudy)
-library(ggplot2)
 library(data.table)
 library(mgcv)
 library(lme4)
 library(splines)
 library(brms)
 library(rstan)
+library(slurmR)
 
 s_define <- function() {
   #cluster-specific intercept
@@ -89,8 +89,8 @@ s_model <- function(dd) {
   #(Est.Error) of the posterior distribution as well as two-sided 95% credible intervals
   #(l-95% CI and u-95% CI) based on quantiles
   bayesgam = brm(y ~ A +  s(k, site, bs = "fs", k = 5), data = dd, family = gaussian(), #cores = 4,
-            iter = 5, warmup = 2,  refresh = 0)#,
-            #control = list(adapt_delta = 0.9))
+            iter = 2500, warmup = 500,  refresh = 0,
+            control = list(adapt_delta = 0.9))
   sparams = get_sampler_params(bayesgam$fit, inc_warmup=FALSE)
   div = sum(sapply(sparams, function(x) sum(x[, 'divergent__'])))
   res_bayesgam <- c(summary(bayesgam)$fixed$Estimate[2], summary(bayesgam)$fixed$`l-95% CI`[2],
@@ -111,19 +111,27 @@ s_single_rep <- function(list_of_defs) {
   return(model_results)
 }
 
-s_replicate <- function(nsim) {
-  
-  list_of_defs <- s_define()
-  
-  model_results <- rbindlist(
-    lapply(
-      X = 1 : nsim, 
-      FUN = function(x) s_single_rep(list_of_defs))
-  )
-  
-  #--- add summary statistics code ---#
-  
-  return(model_results) # summary_stats is a data.table
+s_replicate <- function(iter) {
+  list_of_defs = s_define()
+  model_results = s_single_rep(list_of_defs)
+  return(data.table(iter=iter, model_results))
 }
 
-dres <- s_replicate(2)
+
+job <- Slurm_lapply(X=1:200,
+                    FUN = s_replicate,
+                    njobs = 90,
+                    mc.cores = 4L,
+                    job_name = "Stw_2",
+                    tmp_path = "/gpfs/data/troxellab/danniw/scratch",
+                    plan = "wait",
+                    sbatch_opt = list(time = "24:00:00", partition = "cpu_short", `mem-per-cpu` = "8G"),
+                    export = c("s_define","s_generate","s_model","s_single_rep"),
+                    overwrite = TRUE)
+
+results <- Slurm_collect(job)
+results_agg <- rbindlist(results)
+
+date_stamp <- gsub("-", "", Sys.Date())
+dir.create(file.path("/gpfs/data/troxellab/danniw/data/Stw/", date_stamp), showWarnings = FALSE)
+save(results_agg, file = paste0("/gpfs/data/troxellab/danniw/data/Stw/", date_stamp, "/GAM_bayes_freq.rda"))
