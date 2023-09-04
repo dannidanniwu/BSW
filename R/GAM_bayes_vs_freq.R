@@ -2,6 +2,7 @@
 #In this data generation process, the time effect will not be explicitly smooth, but the underlying covariance structure used to generate the period effects will induce some level of smoothness. 
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
+#brms:https://github.com/paul-buerkner/brms
 library(simstudy)
 library(data.table)
 library(mgcv)
