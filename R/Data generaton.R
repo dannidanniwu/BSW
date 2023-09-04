@@ -9,6 +9,7 @@ library(mgcv)
 library(lme4)
 library(splines)
 library(brms)
+library(rstan)
 
 s_define <- function() {
   #cluster-specific intercept
@@ -48,7 +49,7 @@ s_generate <- function(list_of_defs) {
   dd <- addColumns(defOut, dd)
   dd[, normk := (k - min(k))/(max(k) - min(k))]#scale time period into range 0-1
   
-  return(dd) #  generated_data is a data.table
+  dd[] #  generated_data is a data.table
 }
 
 # dp <- dd[, .(avg = mean(y)), keyby = .(A, site, k)]
@@ -76,20 +77,53 @@ s_generate <- function(list_of_defs) {
 #         axis.ticks.x = element_blank()) +
 #   xlim(c(0, 24)) +
 #   guides(color = guide_legend(override.aes = list(size = 2)))
+s_model <- function(dd) {
+  
+  fitgam <- gam(y ~ A + s(k, site, bs = "fs", k = 5), data = dd, method="REML")
+  res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
+  
+  #fit a Bayesian version
+  #https://fromthebottomoftheheap.net/2018/04/21/fitting-gams-with-brms/
+  #res_bayesgam$model: can be used to check the stan code
+  #every parameter is summarized using the mean (Estimate) and the standard deviation
+  #(Est.Error) of the posterior distribution as well as two-sided 95% credible intervals
+  #(l-95% CI and u-95% CI) based on quantiles
+  bayesgam = brm(y ~ A +  s(k, site, bs = "fs", k = 5), data = dd, family = gaussian(), #cores = 4,
+            iter = 5, warmup = 2,  refresh = 0)#,
+            #control = list(adapt_delta = 0.9))
+  sparams = get_sampler_params(bayesgam$fit, inc_warmup=FALSE)
+  div = sum(sapply(sparams, function(x) sum(x[, 'divergent__'])))
+  res_bayesgam <- c(summary(bayesgam)$fixed$Estimate[2], summary(bayesgam)$fixed$`l-95% CI`[2],
+                    summary(bayesgam)$fixed$`u-95% CI`[2],median(extract(bayesgam$fit, pars = 'b_A')[[1]]), 
+                    summary(bayesgam)$fixed$Rhat[2],div)
+  
+  model_results <- data.table(t(res_fitgam), t(res_bayesgam))
+  setnames(model_results, c("est.freq", "se.freq", "est.mean.bayes", "lowci.bayes",
+                            "upci.bayes","est.med.bayes.gam","rhat","div"))
+  return(model_results) # model_results is a data.table
+}
 
-#Fit a generalized additive model with a site-specific smooth function for time
-list_of_defs <- s_define()
-dd <- s_generate(list_of_defs)
-#fs:random factor smooth interactions
-fitgam <- gam(y ~ A + s(k, site, bs = "fs", k = 12), data = dd)
-#trt effect estimation and standard error
-res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
+s_single_rep <- function(list_of_defs) {
+  
+  generated_data <- s_generate(list_of_defs)
+  model_results <- s_model(generated_data)
+  
+  return(model_results)
+}
 
-#fit a Bayesian version
-#https://fromthebottomoftheheap.net/2018/04/21/fitting-gams-with-brms/
-m2 <- brm(y ~ A +  s(k, site, bs = "fs", k = 12), data = dd, family = gaussian(), seed = 17,
-    iter = 20, warmup = 10,  refresh = 0)
+s_replicate <- function(nsim) {
+  
+  list_of_defs <- s_define()
+  
+  model_results <- rbindlist(
+    lapply(
+      X = 1 : nsim, 
+      FUN = function(x) s_single_rep(list_of_defs))
+  )
+  
+  #--- add summary statistics code ---#
+  
+  return(model_results) # summary_stats is a data.table
+}
 
-summary(m2)
-msms <- marginal_smooths(m2)
-plot(msms)
+dres <- s_replicate(2)
