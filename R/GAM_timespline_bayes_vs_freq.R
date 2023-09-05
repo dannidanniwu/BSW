@@ -11,7 +11,7 @@ library(splines)
 library(brms)
 library(cmdstanr)
 library(slurmR)
-library(splines)
+
 
 set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
 mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/time_spline.stan");
@@ -82,7 +82,7 @@ s_generate <- function(list_of_defs) {
 #         axis.ticks.x = element_blank()) +
 #   xlim(c(0, 24)) +
 #   guides(color = guide_legend(override.aes = list(size = 2)))
-s_model <- function(dd) {
+s_model <- function(dd, mod) {
   set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   fitgam <- gam(y ~ A + s(k, site, bs = "fs", k = 5), data = dd, method="REML")
   res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
@@ -90,7 +90,7 @@ s_model <- function(dd) {
   #stan code: time_spline.stan
   # df: Compute B-spline basis matrix
   # Decide on the number of basis functions
-  B <- bs(dd$timeID, df = 5, intercept = TRUE)
+  B <- splines::bs(dd$timeID, df = 5, intercept = TRUE)
   # matplot(dd$timeID, B, type = 'l', lty = 1, 
   #         xlab = "Time", ylab = "B-spline Basis", 
   #         main = "B-spline Basis Functions")
@@ -116,42 +116,43 @@ s_model <- function(dd) {
   div <- sum(diagnostics_df[, 'divergent__'])
   tree_hit <- sum(diagnostics_df$treedepth__ == 10)
   res_bayesgam = fit$summary(variables="delta",
-                          posterior::default_summary_measures()[1:2],
+                          posterior::default_summary_measures()[1:3],
                           quantiles = ~ quantile(., probs = c(0.025, 0.975)),
                           posterior::default_convergence_measures())
   
   model_results <- data.table(t(res_fitgam), res_bayesgam,div)
   setnames(model_results, c("est.freq", "se.freq", "variable","est.mean.bayes",
-                            "est.med.bayes",
+                            "est.med.bayes","est.sd.bayes",
                             "lowci.bayes",
                             "upci.bayes","rhat","ess_bulk","ess_tail",
                             "div"))
   return(model_results) # model_results is a data.table
 }
 
-s_single_rep <- function(list_of_defs) {
+s_single_rep <- function(list_of_defs, mod) {
   
   generated_data <- s_generate(list_of_defs)
-  model_results <- s_model(generated_data)
+  model_results <- s_model(generated_data, mod)
   
   return(model_results)
 }
 
-s_replicate <- function(iter) {
+s_replicate <- function(iter, mod) {
   list_of_defs = s_define()
-  model_results = s_single_rep(list_of_defs)
+  model_results = s_single_rep(list_of_defs, mod)
   return(data.table(iter=iter, model_results))
 }
 
 
 job <- Slurm_lapply(X=1:200,
                     FUN = s_replicate,
+                    mod=mod,
                     njobs = 90,
                     mc.cores = 4L,
                     job_name = "Stw_3",
                     tmp_path = "/gpfs/data/troxellab/danniw/scratch",
                     plan = "wait",
-                    sbatch_opt = list(time = "24:00:00", partition = "cpu_short", `mem-per-cpu` = "8G"),
+                    sbatch_opt = list(time = "12:00:00", partition = "cpu_short", `mem-per-cpu` = "8G"),
                     export = c("s_define","s_generate","s_model","s_single_rep"),
                     overwrite = TRUE)
 
