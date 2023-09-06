@@ -152,7 +152,7 @@ job <- Slurm_lapply(X=1:200,
                     job_name = "Stw_3",
                     tmp_path = "/gpfs/data/troxellab/danniw/scratch",
                     plan = "wait",
-                    sbatch_opt = list(time = "12:00:00", partition = "cpu_short", `mem-per-cpu` = "8G"),
+                    sbatch_opt = list(time = "24:00:00", partition = "cpu_medium", `mem-per-cpu` = "8G"),
                     export = c("s_define","s_generate","s_model","s_single_rep"),
                     overwrite = TRUE)
 

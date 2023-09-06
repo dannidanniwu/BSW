@@ -22,7 +22,7 @@ parameters {
 
 model {
   // Priors (can be adjusted as needed)
-  a ~ normal(0, 5);
+  a ~ normal(0, sigma_a);
   beta_spline ~ normal(0, 5);   
   delta ~ normal(0, 10);         
   sigma_a ~ normal(0, 5);
