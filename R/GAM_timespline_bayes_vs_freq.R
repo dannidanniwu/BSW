@@ -90,7 +90,9 @@ s_model <- function(dd, mod) {
   #stan code: time_spline.stan
   # df: Compute B-spline basis matrix
   # Decide on the number of basis functions
-  B <- splines::bs(dd$timeID, df = 5, intercept = TRUE)
+  N <- nrow(dd)
+  J <- length(unique(dd$site))
+  B <- splines::bs(dd$k, df = 5, intercept = TRUE)
   # matplot(dd$timeID, B, type = 'l', lty = 1, 
   #         xlab = "Time", ylab = "B-spline Basis", 
   #         main = "B-spline Basis Functions")
@@ -100,8 +102,8 @@ s_model <- function(dd, mod) {
   K_bspline = ncol(B)
   
   studydata <- list(
-    N = nrow(dd), J=J, K_bspline=K_bspline,
-    B=B, Y=dd$y,cluster=dd$site, A=dd$A)
+    N = N, J=J, K_bspline=K_bspline,
+    B=B, Y=dd$y, cluster = as.integer(dd$site), A=dd$A)
   
   fit <- mod$sample(
     data = studydata,
