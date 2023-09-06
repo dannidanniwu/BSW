@@ -27,8 +27,8 @@ model {
   delta ~ normal(0, 10);         
   sigma_a ~ normal(0, 5);
   sigma_e ~ normal(0, 5);
-  beta ~ normal(0, 5);
+  //beta ~ normal(0, 5);
   
   // Likelihood
-  Y ~ normal(beta + a[cluster] + B * beta_spline + delta * A, sigma_e);
+  Y ~ normal(a[cluster] + B * beta_spline + delta * A, sigma_e);
 }
