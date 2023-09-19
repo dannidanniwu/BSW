@@ -9,9 +9,9 @@ data {
 
 parameters {
  // real a0; // Intercept (if necessary)
-  vector[num_basis] a_raw; // B-spline coefficients
-  real<lower=0> tau; // scale for the a coefficients
-  real<lower=0> sigma; // residual standard deviation
+  row_vector[num_basis] a_raw;
+  real<lower=0> sigma;
+  real<lower=0> tau;
   real beta_A;
 }
 
