@@ -16,13 +16,11 @@ parameters {
 }
 
 transformed parameters {
-  row_vector[num_basis] a;
-  vector[num_data] Y_hat;
-  a[1] = a_raw[1];
-  for (i in 2:num_basis)
-    a[i] = a[i-1] + a_raw[i] * tau;
+  row_vector[num_basis] a; 
+  vector[num_data] Y_hat; 
+  a = a_raw*tau;  
     
-    Y_hat = to_vector(A) * beta_A + to_vector(a * B);
+  Y_hat = to_vector(A) * beta_A + to_vector(a * B);
   //Y_hat = a0 + to_vector(A) * 5 + to_vector(a * B);
 }
 
