@@ -19,15 +19,15 @@ parameters {
 
 model {
   // Priors (can be adjusted as needed)
-  a ~ normal(0, sigma_a);
+  a ~ cauchy(0, 8);
   
   for (j in 1:J) {
     beta_spline[j] ~ normal(0, 5);
   }
   
   delta ~ normal(0, 10);         
-  sigma_a ~ exponential(1/5); // Exponential with a mean of 2, suggesting most variation is expected within a range of 5.
-  sigma_e ~ exponential(1/5); // Same reasoning as above.
+  //sigma_a ~ exponential(1/5); // Exponential with a mean of 2, suggesting most variation is expected within a range of 5.
+  sigma_e ~ cauchy(0, 8); // Same reasoning as above.
   //beta ~ normal(0, 5);
   
   // Likelihood

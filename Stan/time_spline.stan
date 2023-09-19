@@ -15,18 +15,18 @@ parameters {
   vector[J] a;                     // Random intercepts for clusters
   vector[K_bspline] beta_spline;   // Coefficients for B-spline basis
   real delta;                      // Coefficient for intervention
-  real<lower=0> sigma_a;           // Standard deviation for a_j
+  //real<lower=0> sigma_a;           // Standard deviation for a_j
   real<lower=0> sigma_e;           // Standard deviation for e_{ijk}
   real beta;                       //overall intercept
 }
 
 model {
   // Priors (can be adjusted as needed)
-  a ~ normal(0, sigma_a);
+  //sigma_a ~ cauchy(0, 5); // Exponential with a mean of 2, suggesting most variation is expected within a range of 5.
+  sigma_e ~ cauchy(0, 8); // Same reasoning as above.
+  a ~ normal(0, 5);
   beta_spline ~ normal(0, 5);   
   delta ~ normal(0, 10);         
-  sigma_a ~ normal(0, 5);
-  sigma_e ~ normal(0, 5);
   //beta ~ normal(0, 5);
   
   // Likelihood

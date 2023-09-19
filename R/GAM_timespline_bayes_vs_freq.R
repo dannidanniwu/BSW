@@ -15,7 +15,9 @@ library(slurmR)
 
 set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
 mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/time_spline.stan");
+#mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/cluster_specific_time_spline.stan");
 #mod <- cmdstan_model("./time_spline.stan");
+#mod <- cmdstan_model("./cluster_specific_time_spline.stan");
 s_define <- function() {
   #cluster-specific intercept
   def <- defData(varname = "a", formula = 0, variance = 9)
@@ -25,7 +27,7 @@ s_define <- function() {
   def <- defData(def, varname = "s2_b", formula = 9, dist = "nonrandom")
   #b:cluster-time effect
   #A: trt for each cluster and time period
-  defOut <- defDataAdd(varname = "y", formula = "a + b + 5 * A", variance = 25)
+  defOut <- defDataAdd(varname = "y", formula = "a + b + 5 * A", variance = 4)
   
   return(list(def = def, defOut = defOut)) 
 }
@@ -151,10 +153,10 @@ job <- Slurm_lapply(X=1:200,
                     mod=mod,
                     njobs = 90,
                     mc.cores = 4L,
-                    job_name = "Stw_3",
+                    job_name = "Stw_4",
                     tmp_path = "/gpfs/data/troxellab/danniw/scratch",
                     plan = "wait",
-                    sbatch_opt = list(time = "24:00:00", partition = "cpu_medium", `mem-per-cpu` = "8G"),
+                    sbatch_opt = list(time = "12:00:00", partition = "cpu_short", `mem-per-cpu` = "8G"),
                     export = c("s_define","s_generate","s_model","s_single_rep"),
                     overwrite = TRUE)
 
@@ -163,4 +165,4 @@ results_agg <- rbindlist(results)
 
 date_stamp <- gsub("-", "", Sys.Date())
 dir.create(file.path("/gpfs/data/troxellab/danniw/data/Stw/", date_stamp), showWarnings = FALSE)
-save(results_agg, file = paste0("/gpfs/data/troxellab/danniw/data/Stw/", date_stamp, "/GAM_timespline_bayes_freq.rda"))
+save(results_agg, file = paste0("/gpfs/data/troxellab/danniw/data/Stw/", date_stamp, "/GAM_timespline_bayes_freq_v3.rda"))
