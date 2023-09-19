@@ -12,6 +12,7 @@ parameters {
   row_vector[num_basis] a_raw;
   real<lower=0> sigma;
   real<lower=0> tau;
+  real<lower=0> lambda;
   real beta_A;
 }
 
@@ -30,12 +31,13 @@ model {
   a_raw ~ normal(0, 1);
   tau ~ cauchy(0, 1);
   sigma ~ cauchy(0, 2);
-
+  lambda ~ cauchy(0, 2.5);//large lambda encourage smooth
   // Regularization term for the B-spline coefficients
   // Adding a penalty to the log posterior for large differences between consecutive B-spline coefficients. This penalty encourages adjacent coefficients to be similar to one another, thus promoting smoothness in the estimated spline function.
-  //for (i in 2:num_basis) {
-   // target += -0.5 * lambda * square(a[i] - a[i-1]);
- // }
+  for (i in 2: (num_basis-1)) {
+    //target += -0.5 * lambda * square(a[i] - a[i-1]);//First-Order Difference
+    target += -0.5 * lambda * square(a[i-1] - a[i] + a[i+1]);
+  }
 
   // Likelihood
   y ~ normal(Y_hat, sigma);

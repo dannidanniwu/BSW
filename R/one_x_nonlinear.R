@@ -37,24 +37,30 @@ s_model <- function(ds, mod) {
   fitgam <- gam(y ~ A + s(x1,bs="bs",k=9+4) -1, data = ds, method="REML")
   res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
   range <-   res_fitgam[1] + c(-1,1) * 1.96 *   res_fitgam[2]
-  
-  X_bspline <- predict(bs(ds$x1, degree=3, knots=quantile(ds$x1, probs=seq(0, 1, length=11)[-c(1, 11)])))
+    
+  B <- t(predict(bs(ds$x1, degree=3, knots=quantile(ds$x1, probs=seq(0, 1, length=11)[-c(1, 11)]))))
   
   # Incorporating the B-spline basis into the data
   #ds_with_bspline <- cbind(ds, X_bspline)
   
   # Fitting the model using gam
-  #fitgam <- gam(y ~ A + X_bspline - 1, data = ds_with_bspline, method="REML")
+  #fitgam2 <- gam(y ~ A + X_bspline - 1, data = ds_with_bspline, method="REML")
   
   
-  stan_data <- list(N = nrow(ds),
-                    K = ncol(X_bspline),
-                    X_bspline = X_bspline,
+  stan_data <- list(num_data = nrow(ds),
+                    num_basis = nrow(B),
+                    B = B,
                     A = ds$A,
                     y = ds$y)
   
   # Fit the model
-  fit <- mod$sample(data = stan_data)
+  fit <- mod$sample(data = stan_data,
+                    refresh = 0,
+                    chains = 4L,
+                    parallel_chains = 4L,
+                    iter_warmup = 500,
+                    iter_sampling = 2500,
+                    show_messages = FALSE)
   
   diagnostics_df <- as_draws_df(fit$sampler_diagnostics())
   div <- sum(diagnostics_df[, 'divergent__'])
