@@ -101,11 +101,11 @@ s_model <- function(train_data, test_data, mod) {
   model_results <- data.table(lowci=range[1], upci=range[2], bayes_gam,div, covered_freq=(range[1] < 5 & 5 < range[2]),
                               covered_bayes,rmse_gam, rmse_bayesian)
   
-  setnames(model_results, c("lowci.freq", "upci.freq", "covered_freq","covered_bayes","variable","est.mean.bayes",
+  setnames(model_results, c("lowci.freq", "upci.freq","variable","est.mean.bayes",
                             "est.med.bayes","est.sd.bayes",
                             "lowci.bayes",
                             "upci.bayes","rhat","ess_bulk","ess_tail",
-                            "div","rmse_gam","rmse_bayesian"))
+                            "div","covered_freq","covered_bayes","rmse_gam","rmse_bayesian"))
   
   return(model_results)
 }
@@ -127,4 +127,6 @@ s_replicate <- function(iter, mod) {
 
 
 job <- lapply(1:20,function(i) s_replicate(iter=i, mod=mod))
-rbindlist(job)
+res <- rbindlist(job)
+
+res
