@@ -5,6 +5,10 @@ data {
   matrix[num_basis, num_data] B; // B-spline basis matrix
   int<lower=0, upper=1> A[num_data]; // binary variable
   //real<lower=0> lambda; // Regularization parameter
+  // For test data
+  int<lower=0> num_data_test;
+  matrix[num_basis, num_data_test] B_test;
+  int<lower=0, upper=1> A_test[num_data_test];
 }
 
 parameters {
@@ -41,4 +45,12 @@ model {
 
   // Likelihood
   y ~ normal(Y_hat, sigma);
+}
+
+generated quantities {
+  vector[num_data_test] y_pred_test;
+
+  for (i in 1:num_data_test) {
+    y_pred_test[i] = A_test[i] * beta_A + dot_product(to_row_vector(B_test[,i]), a);
+  }
 }
