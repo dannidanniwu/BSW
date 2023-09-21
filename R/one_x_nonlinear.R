@@ -9,7 +9,7 @@ library(slurmR)
 library(dplyr)
 # Compile the Stan model
 mod <- cmdstan_model("./one_x_nonlinear.stan")
-
+mod <- cmdstan_model("./one_x_nonlinear_penalty.stan")
 s_define <- function() {
   #x
   def <- defData(varname = "x1", formula = 0, variance = 2)
@@ -20,10 +20,10 @@ s_define <- function() {
   return(list(def = def, defOut = defOut)) 
 }
 
-s_generate <- function(list_of_defs) {
+s_generate <- function(iter, list_of_defs) {
   
   list2env(list_of_defs, envir = environment())
-  
+  set.seed(iter+123)
   #--- add data generation code ---#
   #24 sites in total
   ds <- genData(200, def)
@@ -56,7 +56,8 @@ s_model <- function(train_data, test_data, mod) {
                     y = train_data$y,
                     num_data_test = nrow(test_data),
                     B_test = t(B_test_tr),
-                    A_test = test_data$A)
+                    A_test = test_data$A
+                   )
   
   # Fit the Bayesian model
   fit <- mod$sample(data = stan_data,
@@ -87,7 +88,7 @@ s_model <- function(train_data, test_data, mod) {
   
   
   
-  ##############Test RMSE on the test data#################
+  ##############Test RMSE on the test data###########gitgit######
   # Use the GAM model to predict on the test data to get the mean predictions.
   test_data$pred_gam <- predict(fitgam, newdata = test_data)
   
@@ -133,10 +134,10 @@ s_model <- function(train_data, test_data, mod) {
   return(model_results)
 }
 
-s_single_rep <- function(list_of_defs, mod) {
+s_single_rep <- function(iter,list_of_defs, mod) {
   
-  train_data <- s_generate(list_of_defs)
-  test_data <- s_generate(list_of_defs)
+  train_data <- s_generate(iter,list_of_defs)
+  test_data <- s_generate(iter+999,list_of_defs)
   model_results <- s_model(train_data, test_data, mod)
 
   return(model_results)
@@ -144,12 +145,13 @@ s_single_rep <- function(list_of_defs, mod) {
 
 s_replicate <- function(iter, mod) {
   list_of_defs = s_define()
-  model_results = s_single_rep(list_of_defs, mod)
+  model_results = s_single_rep(iter,list_of_defs, mod)
   return(data.table(iter=iter, model_results))
 }
 
 
-job <- lapply(1:20,function(i) s_replicate(iter=i, mod=mod))
+job <- lapply(1:10,function(i) s_replicate(iter=i, mod=mod))
 res <- rbindlist(job)
 
 res
+sapply(res,mean)
