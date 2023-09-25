@@ -9,7 +9,7 @@ library(slurmR)
 library(dplyr)
 set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
 # Compile the Stan model
-mod <- cmdstan_model("/gpfs/home/dw2625/r/BS/one_x_nonlinear_penalty.stan")
+mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/one_x_nonlinear_penalty.stan")
 
 s_define <- function() {
   #x
@@ -34,20 +34,20 @@ s_generate <- function(list_of_defs) {
 }
 
 s_model <- function(train_data, test_data, mod) {
-  #set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
+  set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   #######Fitting the GAM model with default penalization 
-  fitgam <- gam(y ~ A + s(x1,bs="bs",k=9+4) -1, data = train_data, method="REML")
+  fitgam <- mgcv::gam(y ~ A + s(x1,bs="bs",k=9+4) -1, data = train_data, method="REML")
   res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
   range <-   res_fitgam[1] + c(-1,1) * 1.96 *   res_fitgam[2]
   
   # Define the knots based on the training data
   knots_train <- quantile(train_data$x1, probs=seq(0, 1, length=11)[-c(1, 11)])
   
-  B_train <- predict(bs(train_data$x1, degree=3, knots=quantile(train_data$x1, probs=seq(0, 1, length=11)[-c(1, 11)])))
+  B_train <- predict(splines::bs(train_data$x1, degree=3, knots=quantile(train_data$x1, probs=seq(0, 1, length=11)[-c(1, 11)])))
   colnames(B_train) <- paste0("Bspline_", 1:ncol(B_train))
   
   # Compute the B-spline basis for the test set using the same knots from the training data
-  B_test_tr <- predict(bs(test_data$x1, degree=3, knots=knots_train))
+  B_test_tr <- predict(splines::bs(test_data$x1, degree=3, knots=knots_train))
   colnames(B_test_tr) <- paste0("Bspline_", 1:ncol(B_test_tr))
   
   stan_data <- list(num_data = nrow(train_data),
@@ -82,7 +82,7 @@ s_model <- function(train_data, test_data, mod) {
   # Fitting the model using gam
   bspline_terms <- paste(colnames(B_train), collapse = " + ")
   formula_str <- paste("y ~ A +", bspline_terms, "- 1")
-  fitgam2 <- gam(as.formula(formula_str), data = ds_with_bspline, method="REML")
+  fitgam2 <- mgcv::gam(as.formula(formula_str), data = ds_with_bspline, method="REML")
   res_fitgam2 <- c(summary(fitgam2)$p.coeff["A"], summary(fitgam2)$se["A"])
   range2 <-   res_fitgam2[1] + c(-1,1) * 1.96 *   res_fitgam2[2]
   
@@ -157,7 +157,7 @@ sjob <- Slurm_lapply(1:1000,
                      njobs = 90,
                      tmp_path = "/gpfs/scratch/dw2625",
                      job_name = "BS_100",
-                     sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "25G"),
+                     sbatch_opt = list(time = "4:00:00",partition = "cpu_dev", `mem-per-cpu` = "25G"),
                      export = c("s_define","s_generate","s_model","s_single_rep"),
                      plan = "wait",
                      overwrite=TRUE)
@@ -166,5 +166,5 @@ res <- Slurm_collect(sjob) # data is a list
 res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date())
-dir.create(file.path("/gpfs/home/dw2625/r/BS/", date_stamp), showWarnings = FALSE)
-save(res, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/one_x_nonlinear.rda"))
+dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
+save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/one_x_nonlinear.rda"))
