@@ -141,9 +141,9 @@ sjob <- Slurm_lapply(1:1000,
                      FUN=s_replicate, 
                      mod=mod, 
                      njobs = 90, 
-                     tmp_path = "/gpfs/scratch/dw2625", 
+                     tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
                      job_name = "BS_101", 
-                     sbatch_opt = list(time = "4:00:00",partition = "cpu_dev", `mem-per-cpu` = "25G"), 
+                     sbatch_opt = list(time = "12:00:00",partition = "cpu_dev", `mem-per-cpu` = "8G"), 
                      export = c("s_define","s_generate","s_model","s_single_rep"), 
                      plan = "wait", 
                      overwrite=TRUE) 
@@ -153,4 +153,4 @@ res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date()) 
 dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge.rda"))
+save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_cpu_short.rda"))
