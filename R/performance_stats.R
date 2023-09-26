@@ -29,10 +29,12 @@ bayes_performance <- function(true_value, est, lowci, upci, se){
 }
 
 # Example usage (assuming `results_agg` is properly defined before these function calls):
-freq_p = performance(5, results_agg$est.freq, results_agg$se.freq)
+freq_p = performance(5, res$est_gam_freq, res$se_gam_freq)
 round(unlist(freq_p),3)
-bayes_p_med = bayes_performance(5, results_agg$est.med.bayes, results_agg$lowci.bayes, results_agg$upci.bayes,results_agg$est.sd.bayes)
+bayes_p_med = bayes_performance(5, res$est_med_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
 round(unlist(bayes_p_med),3)
-bayes_p_mean = bayes_performance(5, results_agg$est.mean.bayes, results_agg$lowci.bayes, results_agg$upci.bayes,results_agg$est.sd.bayes)
+bayes_p_mean = bayes_performance(5, res$est_mean_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
 round(unlist(bayes_p_mean),3)
 
+freq_np = performance(5, res$est_gam_np_freq, res$se_gam_np_freq)
+round(unlist(freq_np),3)
