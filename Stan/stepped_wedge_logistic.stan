@@ -14,7 +14,7 @@ parameters {
   matrix[num_sites, num_basis] a_site; // site-specific spline coefficients
   vector[num_basis] mu_a;         // global mean for spline coefficients
   real beta_A;
-  vector[num_sites]  beta_0;
+  real  beta_0;
   real<lower=0> lambda;
 }
 
@@ -22,14 +22,14 @@ transformed parameters {
   vector[num_data] Y_hat;
 
   for (i in 1:num_data) {
-    Y_hat[i] = beta_0[site[i]] + beta_A * A[i] + dot_product(a_site[site[i]], B[:,i]);//B[:,i] will give you a vector that consists of all elements from the ith column of that matrix.
+    Y_hat[i] = beta_0 + beta_A * A[i] + dot_product(a_site[site[i]], B[:,i]);//B[:,i] will give you a vector that consists of all elements from the ith column of that matrix.
   }
 }
 
 model {
  sigma_a ~ normal(0, 1); // Changed from Cauchy to half-normal
   beta_0 ~ normal(0, 1);
-  beta_A ~ normal(0, 20); 
+  beta_A ~ normal(0, 2.5); 
   lambda ~ normal(0, 1); // Changed from Cauchy to half-normal
   
   for (j in 1:num_basis) {

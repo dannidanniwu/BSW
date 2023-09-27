@@ -19,9 +19,9 @@ mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_logistic.st
 s_define <- function() {
   #cluster-specific intercept
   def <- defData(varname = "a", formula = 0, variance = 1)
-  def2 <- defDataAdd(varname = "b", formula = "(k - 0.5)^2", variance =0.4)
+  def2 <- defDataAdd(varname = "b", formula = "(normk - 0.5)^2", variance =0.4)
   #A: trt for each cluster and time period
-  defOut <- defDataAdd(varname = "y", formula = "a + b + 5 * A", dist = "binary", link="logit")
+  defOut <- defDataAdd(varname = "y", formula = "a + b + 0.5*A", dist = "binary", link="logit")
   
   return(list(def = def, def2 =def2, defOut = defOut)) 
 }
@@ -32,18 +32,21 @@ s_generate <- function(iter, list_of_defs) {
   list2env(list_of_defs, envir = environment())
   
   #--- add data generation code ---#
-  ds <- genData(10, def, id = "site")#site
-  ds <- addPeriods(ds, 11, "site", perName = "k") #create time periods for each site
+  ds <- genData(24, def, id = "site")#site
+  ds <- addPeriods(ds, 25, "site", perName = "k") #create time periods for each site
+  ds[, normk := (k - min(k))/(max(k) - min(k))]#scale time period into range 0-1
+  
   ds <- addColumns(def2, ds)
   #assign the treatment status based on the stepped-wedge design
   #per cluster trt change per wave
-  ds <- trtStepWedge(ds, "site", nWaves = 10, lenWaves = 1, startPer = 1, 
+  ds <- trtStepWedge(ds, "site", nWaves = 24, lenWaves = 1, startPer = 1, 
                      grpName = "A", perName = "k")
   ds$site <- as.factor(ds$site)
   #30 individuals per site per period and generate each individual-level outcome
   dd <- genCluster(ds, "timeID", numIndsVar = 25, level1ID = "id")
+  
   dd <- addColumns(defOut, dd)
-  dd[, normk := (k - min(k))/(max(k) - min(k))]#scale time period into range 0-1
+  #dd[, normk := (k - min(k))/(max(k) - min(k))]#scale time period into range 0-1
   
   dd[] #  generated_data is a data.table
  
@@ -53,7 +56,7 @@ s_model <- function(train_data, mod) {
   set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   #######Fitting the GAM model with default penalization 
   
-  fitgam <- bam(y ~ A + s(site, bs = "re") + s(k) + s(k, site, bs = "fs"), data = train_data, method="fREML",
+  fitgam <- bam(y ~ A + s(site, bs = "re") + s(normk) + s(normk, site, bs = "fs"), data = train_data, method="fREML",
                 family = "binomial")
   #y ~ A: Linear effect of treatment variable 
   #s(site, bs = "re"): This term introduces a random intercept for each site. The intercept will vary around a global mean.
@@ -63,9 +66,9 @@ s_model <- function(train_data, mod) {
   range <-   res_fitgam[1] + c(-1,1) * 1.96 *   res_fitgam[2]
   
   # Define the knots based on the training data
-  knots_train <- quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])
+  knots_train <- quantile(train_data$normk, probs=seq(0, 1, length=6)[-c(1, 6)])
   
-  B_train <- predict(splines::bs(train_data$k, degree=3, knots=quantile(train_data$normk, probs=seq(0, 1, length=6)[-c(1, 6)])))
+  B_train <- predict(splines::bs(train_data$normk, degree=3, knots=quantile(train_data$normk, probs=seq(0, 1, length=6)[-c(1, 6)])))
   colnames(B_train) <- paste0("Bspline_", 1:ncol(B_train))
   
 
