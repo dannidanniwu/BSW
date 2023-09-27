@@ -56,10 +56,15 @@ s_model <- function(train_data, mod) {
   res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
   range <-   res_fitgam[1] + c(-1,1) * 1.96 *   res_fitgam[2]
   
+  # Fitting a more complex  model using gam
+  fitgam2 <- mgcv::bam(y ~ A +  s(k) + s(site, A, bs = "re") + s(k, site,  bs = "fs"), data = train_data, method="fREML")
+  res_fitgam2 <- c(summary(fitgam2)$p.coeff["A"], summary(fitgam2)$se["A"])
+  range2 <-   res_fitgam2[1] + c(-1,1) * 1.96 *   res_fitgam2[2]
+  
   # Define the knots based on the training data
   knots_train <- quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])
   
-  B_train <- predict(splines::bs(train_data$k, degree=3, knots=quantile(train_data$normk, probs=seq(0, 1, length=6)[-c(1, 6)])))
+  B_train <- predict(splines::bs(train_data$k, degree=3, knots=quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])))
   colnames(B_train) <- paste0("Bspline_", 1:ncol(B_train))
   
 
@@ -89,10 +94,6 @@ s_model <- function(train_data, mod) {
   #Fit a frequentist linear model with the same basis as the Bayesian model, but no penalization
   # Incorporating the B-spline basis into the data
   ds_with_bspline <- cbind(train_data,  B_train)
-  # Fitting a more complex  model using gam
-  fitgam2 <- mgcv::bam(y ~ A + s(site, A, bs = "re")  + s(k) + s(k, site,  bs = "fs"), data = train_data, method="fREML")
-  res_fitgam2 <- c(summary(fitgam2)$p.coeff["A"], summary(fitgam2)$se["A"])
-  range2 <-   res_fitgam2[1] + c(-1,1) * 1.96 *   res_fitgam2[2]
   
   model_results <- data.table(est_gam_freq= res_fitgam[1], se_gam_freq=res_fitgam[2], 
                               gam_lowci=range[1], gam_upci=range[2], bayes_gam,div, 
@@ -129,13 +130,13 @@ s_replicate <- function(iter, mod) {
 }
 
 
-sjob <- Slurm_lapply(1:100, 
+sjob <- Slurm_lapply(1:1000, 
                      FUN=s_replicate, 
                      mod=mod, 
                      njobs = 90, 
                      tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
-                     job_name = "BS_104", 
-                     sbatch_opt = list(time = "4:00:00",partition = "cpu_dev", `mem-per-cpu` = "8G"), 
+                     job_name = "BS_105", 
+                     sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
                      export = c("s_define","s_generate","s_model","s_single_rep"), 
                      plan = "wait", 
                      overwrite=TRUE) 
@@ -145,6 +146,6 @@ res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date()) 
 dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_test_hier.rda"))
+save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_test_hier_1000iter.rda"))
 
 
