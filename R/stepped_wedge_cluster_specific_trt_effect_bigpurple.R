@@ -16,8 +16,8 @@ mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_time_spline
 s_define <- function() {
   #cluster-specific intercept
   def <- defData(varname = "a", formula = 0, variance = 1)
-  def <- defData(def, varname = "a_trt", formula = 0, variance = 1)
-  def2 <- defDataAdd(varname = "b", formula = "(k - 0.5)^2", variance =0.4)
+  def <- defData(def, varname = "a_trt", formula = 0, variance = 4)
+  def2 <- defDataAdd(varname = "b", formula = "(k - 0.5)^2", variance =9)
   #A: trt for each cluster and time period
   defOut <- defDataAdd(varname = "y", formula = "a + b + (5 + a_trt) * A", variance = 1)
   
@@ -30,12 +30,12 @@ s_generate <- function(iter, list_of_defs) {
   list2env(list_of_defs, envir = environment())
   
   #--- add data generation code ---#
-  ds <- genData(10, def, id = "site")#site
-  ds <- addPeriods(ds, 11, "site", perName = "k") #create time periods for each site
+  ds <- genData(24, def, id = "site")#site
+  ds <- addPeriods(ds, 25, "site", perName = "k") #create time periods for each site
   ds <- addColumns(def2, ds)
   #assign the treatment status based on the stepped-wedge design
   #per cluster trt change per wave
-  ds <- trtStepWedge(ds, "site", nWaves = 10, lenWaves = 1, startPer = 1, 
+  ds <- trtStepWedge(ds, "site", nWaves = 24, lenWaves = 1, startPer = 1, 
                      grpName = "A", perName = "k")
   ds$site <- as.factor(ds$site)
   #30 individuals per site per period and generate each individual-level outcome
@@ -50,7 +50,7 @@ s_generate <- function(iter, list_of_defs) {
 s_model <- function(train_data, test_data, mod) {
   set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   #######Fitting the GAM model with default penalization 
-  fitgam <- mgcv::gam(y ~ A + s(site, bs = "re") + s(site, A, bs = "re") + s(k, site,  bs = "fs", k = 5), data = train_data, method="REML")
+  fitgam <- mgcv::gam(y ~ A + s(site, A, bs = "re") + s(k, site,  bs = "fs", k = 5), data = train_data, method="REML")
   res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
   range <-   res_fitgam[1] + c(-1,1) * 1.96 *   res_fitgam[2]
   
@@ -144,7 +144,7 @@ sjob <- Slurm_lapply(1:500,
                      mod=mod, 
                      njobs = 90, 
                      tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
-                     job_name = "BS_102", 
+                     job_name = "BS_103", 
                      sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
                      export = c("s_define","s_generate","s_model","s_single_rep"), 
                      plan = "wait", 
@@ -155,5 +155,5 @@ res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date()) 
 dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_cluster_specific_treatment_effect.rda"))
+save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_cluster_specific_treatment_effect_24cluster.rda"))
 
