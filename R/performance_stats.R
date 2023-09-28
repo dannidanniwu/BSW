@@ -1,3 +1,4 @@
+library(dplyr)
 coverage <- function(x, a, b) {
   range <- a + c(-1,1) * 1.96 * b
   (range[1] < x & x < range[2])
@@ -28,13 +29,14 @@ bayes_performance <- function(true_value, est, lowci, upci, se){
   return(list(bias = bias, rmse = rmse, est.se=est.se,coverage = bay_coverage))
 }
 
+res <- res %>%filter(div <= 100)
 # Example usage (assuming `results_agg` is properly defined before these function calls):
-freq_p = performance(5, res$est_gam_freq, res$se_gam_freq)
+freq_p = performance(2, res$est_gam_freq, res$se_gam_freq)
 round(unlist(freq_p),3)
-bayes_p_med = bayes_performance(5, res$est_med_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
+bayes_p_med = bayes_performance(2, res$est_med_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
 round(unlist(bayes_p_med),3)
-bayes_p_mean = bayes_performance(5, res$est_mean_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
+bayes_p_mean = bayes_performance(2, res$est_mean_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
 round(unlist(bayes_p_mean),3)
 
-freq_np = performance(5, res$est_gam_np_freq, res$se_gam_np_freq)
-round(unlist(freq_np),3)
+freq_rdn = performance(2, res$est_gam_rdn_freq, res$se_gam_rdn_freq)
+round(unlist(freq_rdn),3)
