@@ -21,7 +21,7 @@ s_define <- function() {
   def <- defData(varname = "a", formula = 0, variance = 1)
   def2 <- defDataAdd(varname = "b", formula = "(k - 0.5)^2", variance =0.4)
   #A: trt for each cluster and time period
-  defOut <- defDataAdd(varname = "y", formula = "a + b + 5 * A", variance = 1)
+  defOut <- defDataAdd(varname = "y", formula = "a + b + 2 * A", variance = 1)
   
   return(list(def = def, def2 =def2, defOut = defOut)) 
 }
@@ -130,7 +130,7 @@ s_replicate <- function(iter, mod) {
 }
 
 
-sjob <- Slurm_lapply(1:1000, 
+sjob <- Slurm_lapply(1:100, 
                      FUN=s_replicate, 
                      mod=mod, 
                      njobs = 90, 
@@ -146,6 +146,6 @@ res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date()) 
 dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_test_hier_1000iter.rda"))
+save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_test_hier_betaA_2.rda"))
 
 

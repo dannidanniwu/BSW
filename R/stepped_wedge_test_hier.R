@@ -20,7 +20,7 @@ s_define <- function() {
   def <- defData(varname = "a", formula = 0, variance = 1)
   def2 <- defDataAdd(varname = "b", formula = "(k - 0.5)^2", variance =0.4)
   #A: trt for each cluster and time period
-  defOut <- defDataAdd(varname = "y", formula = "a + b + 5 * A", variance = 1)
+  defOut <- defDataAdd(varname = "y", formula = "a + b + 2 * A", variance = 1)
   
   return(list(def = def, def2 =def2, defOut = defOut)) 
 }

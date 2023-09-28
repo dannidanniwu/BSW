@@ -38,7 +38,7 @@ model {
   beta_0 ~ normal(0, 1);
   beta_A_site ~ normal(beta_A, tau);
   tau ~ normal(0, 1);
-  beta_A ~ normal(0, 10);
+  beta_A ~ normal(0, 5);
   lambda ~ cauchy(0, 2.5);//large lambda encourage smooth
   for (j in 1:num_basis) {
     a_site[:,j] ~ normal(mu_a[j], sigma_a);
