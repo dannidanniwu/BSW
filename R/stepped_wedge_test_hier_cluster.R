@@ -89,7 +89,7 @@ s_model <- function(train_data, mod) {
                           posterior::default_summary_measures()[1:3],
                           quantiles = ~ quantile(., probs = c(0.025, 0.975)),
                           posterior::default_convergence_measures())
-  covered_bayes =   (bayes_gam$`2.5%`< 5 & 5 < bayes_gam$`97.5%`)
+  covered_bayes =   (bayes_gam$`2.5%`< 2 & 2 < bayes_gam$`97.5%`)
   
   #Fit a frequentist linear model with the same basis as the Bayesian model, but no penalization
   # Incorporating the B-spline basis into the data
@@ -99,8 +99,8 @@ s_model <- function(train_data, mod) {
                               gam_lowci=range[1], gam_upci=range[2], bayes_gam,div, 
                               est_gam_freq_rdn = res_fitgam2[1], se_gam_freq_rdn=res_fitgam2[2], 
                               gam_rdn_lowci=range2[1], gam_rdn_upci=range2[2],
-                              covered_gam_freq=(range[1] < 5 & 5 < range[2]),
-                              covered_bayes,covered_gam_rdn_freq=(range2[1] < 5 & 5 < range2[2])
+                              covered_gam_freq=(range[1] < 2 & 2 < range[2]),
+                              covered_bayes,covered_gam_rdn_freq=(range2[1] < 2 & 2 < range2[2])
                               ) %>%
     mutate(across(-c(variable,covered_gam_freq, covered_bayes,covered_gam_rdn_freq), round, 3))
   

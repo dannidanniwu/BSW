@@ -51,17 +51,22 @@ s_generate <- function(iter, list_of_defs) {
 s_model <- function(train_data, mod) {
   #set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   #######Fitting the GAM model with default penalization 
-  fitgam <- gam(y ~ A + s(k, site, bs = "fs", k = 5), data = train_data, method="REML")
+  fitgam <- bam(y ~ A +  s(k) + s(k, site, bs = "fs"), data = train_data, method="fREML")
   res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
   range <-   res_fitgam[1] + c(-1,1) * 1.96 *   res_fitgam[2]
+  
+  # Fitting a more complex  model using gam
+  fitgam2 <- mgcv::bam(y ~ A +  s(k) + s(site, A, bs = "re") + s(k, site,  bs = "fs"), data = train_data, method="fREML")
+  res_fitgam2 <- c(summary(fitgam2)$p.coeff["A"], summary(fitgam2)$se["A"])
+  range2 <-   res_fitgam2[1] + c(-1,1) * 1.96 *   res_fitgam2[2]
   
   # Define the knots based on the training data
   knots_train <- quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])
   
-  B_train <- predict(splines::bs(train_data$k, degree=3, knots=quantile(train_data$normk, probs=seq(0, 1, length=6)[-c(1, 6)])))
+  B_train <- predict(splines::bs(train_data$k, degree=3, knots=quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])))
   colnames(B_train) <- paste0("Bspline_", 1:ncol(B_train))
   
-
+  
   stan_data <- list(num_data = nrow(train_data),
                     num_basis = ncol(B_train),
                     B = t(B_train),
@@ -69,7 +74,7 @@ s_model <- function(train_data, mod) {
                     y = train_data$y,
                     num_sites = length(unique(train_data$site)),
                     site = train_data$site
-
+                    
   )
   
   # Fit the Bayesian model
@@ -83,31 +88,28 @@ s_model <- function(train_data, mod) {
                           posterior::default_summary_measures()[1:3],
                           quantiles = ~ quantile(., probs = c(0.025, 0.975)),
                           posterior::default_convergence_measures())
-  covered_bayes =   (bayes_gam$`2.5%`< 5 & 5 < bayes_gam$`97.5%`)
+  covered_bayes =   (bayes_gam$`2.5%`< 2 & 2 < bayes_gam$`97.5%`)
   
   #Fit a frequentist linear model with the same basis as the Bayesian model, but no penalization
   # Incorporating the B-spline basis into the data
   ds_with_bspline <- cbind(train_data,  B_train)
-  # Fitting a more complex  model using gam
-  fitgam2 <- mgcv::gam(y ~ A + s(site, A, bs = "re") + s(k, site,  bs = "fs", k = 5), data = train_data, method="REML")
-  res_fitgam2 <- c(summary(fitgam2)$p.coeff["A"], summary(fitgam2)$se["A"])
-  range2 <-   res_fitgam2[1] + c(-1,1) * 1.96 *   res_fitgam2[2]
   
   model_results <- data.table(est_gam_freq= res_fitgam[1], se_gam_freq=res_fitgam[2], 
                               gam_lowci=range[1], gam_upci=range[2], bayes_gam,div, 
-                              est_gam_freq_np = res_fitgam2[1], se_gam_freq_np=res_fitgam2[2], 
-                              gam_np_lowci=range2[1], gam_np_upci=range2[2],
-                              covered_gam_freq=(range[1] < 5 & 5 < range[2]),
-                              covered_bayes,covered_gam_np_freq=(range2[1] < 5 & 5 < range2[2])
-                              ) %>%
-    mutate(across(-c(variable,covered_gam_freq, covered_bayes,covered_gam_np_freq), round, 3))
+                              est_gam_freq_rdn = res_fitgam2[1], se_gam_freq_rdn=res_fitgam2[2], 
+                              gam_rdn_lowci=range2[1], gam_rdn_upci=range2[2],
+                              covered_gam_freq=(range[1] < 2 & 2 < range[2]),
+                              covered_bayes,covered_gam_rdn_freq=(range2[1] < 2 & 2 < range2[2])
+  ) %>%
+    mutate(across(-c(variable,covered_gam_freq, covered_bayes,covered_gam_rdn_freq), round, 3))
   
   setnames(model_results, c("est_gam_freq","se_gam_freq","lowci_freq", "upci_freq","variable","est_mean_bayes",
                             "est_med_bayes","est_sd_bayes",
                             "lowci_bayes",
                             "upci_bayes","rhat","ess_bulk","ess_tail",
-                            "div","est_gam_np_freq","se_gam_np_freq","lowci_freq_np", "upci_freq_np",
-                            "covered_freq","covered_bayes","covered_gam_np_freq"))
+                            "div","est_gam_rdn_freq","se_gam_rdn_freq","lowci_freq_rdn", "upci_freq_rdn",
+                            "covered_freq","covered_bayes","covered_gam_rdn_freq"))
+  
   
   return(model_results)
 }
@@ -129,7 +131,8 @@ s_replicate <- function(iter, mod) {
 
 
 job <- lapply(1:5,function(i) s_replicate(iter=i, mod=mod))
-res3 <- rbindlist(job)
+res4 <- rbindlist(job)
 
-res3
-round(sapply(res3,mean),3)
+res4
+round(sapply(res4,mean),3)
+
