@@ -1,6 +1,6 @@
-dp <- dd[, .(avg = mean(y)), keyby = .(A, site, normk)]
+dp <- dd[, .(avg = mean(y)), keyby = .(A, site, k)]
 
-ggplot(data = dp, aes(x = normk, y = avg)) +
+ggplot(data = dp, aes(x = k, y = avg)) +
   geom_line(aes(group = site, color = factor(A))) +
   scale_color_manual(values = c("#a53e3e", "#3ea5a5"),
                      guide = guide_legend(reverse = TRUE),
