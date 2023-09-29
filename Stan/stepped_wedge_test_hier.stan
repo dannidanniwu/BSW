@@ -38,7 +38,7 @@ model {
   beta_0 ~ normal(0, 1);
   beta_A_site ~ normal(beta_A, tau);
   tau ~ normal(0, 1);
-  beta_A ~ normal(0, 5);
+  beta_A ~ normal(0, 10);
   lambda ~ cauchy(0, 2.5);//large lambda encourage smooth
   for (j in 1:num_basis) {
     a_site[:,j] ~ normal(mu_a[j], sigma_a);
@@ -52,3 +52,10 @@ model {
   y ~ normal(Y_hat, sigma);
 }
 
+generated quantities {
+  vector[num_data] y_pred_mean;
+
+  for (i in 1:num_data) {
+    y_pred_mean[i] = beta_0 + beta_A_site[site[i]] * A[i] + dot_product(a_site[site[i]], B[:,i]);
+  }
+}
