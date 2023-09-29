@@ -20,7 +20,7 @@ s_define <- function() {
   def <- defData(varname = "a", formula = 0, variance = 1)
   def2 <- defDataAdd(varname = "b", formula = "(k - 0.5)^2", variance =0.4)
   #A: trt for each cluster and time period
-  defOut <- defDataAdd(varname = "y", formula = "a + b + 2 * A", variance = 1)
+  defOut <- defDataAdd(varname = "y", formula = "a + b + 2 * A", variance = 5)
   
   return(list(def = def, def2 =def2, defOut = defOut)) 
 }
@@ -31,12 +31,12 @@ s_generate <- function(iter, list_of_defs) {
   list2env(list_of_defs, envir = environment())
   
   #--- add data generation code ---#
-  ds <- genData(30, def, id = "site")#site
-  ds <- addPeriods(ds, 31, "site", perName = "k") #create time periods for each site
+  ds <- genData(20, def, id = "site")#site
+  ds <- addPeriods(ds, 21, "site", perName = "k") #create time periods for each site
   ds <- addColumns(def2, ds)
   #assign the treatment status based on the stepped-wedge design
   #per cluster trt change per wave
-  ds <- trtStepWedge(ds, "site", nWaves = 30, lenWaves = 1, startPer = 1, 
+  ds <- trtStepWedge(ds, "site", nWaves = 20, lenWaves = 1, startPer = 1, 
                      grpName = "A", perName = "k")
   ds$site <- as.factor(ds$site)
   #30 individuals per site per period and generate each individual-level outcome
