@@ -9,12 +9,11 @@ library(slurmR)
 library(dplyr)
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
-
+l
 # Compile the Stan model
 #mod <- cmdstan_model("./stepped_wedge_time_spline.stan")
 #mod <- cmdstan_model("./stepped_wedge_time_spline_penalized.stan")
-set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0") 
-mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_test_hier.stan")
+mod <- cmdstan_model("./stepped_wedge_random_walk.stan")
 
 s_define <- function() {
   #cluster-specific intercept
@@ -32,16 +31,16 @@ s_generate <- function(iter, list_of_defs) {
   list2env(list_of_defs, envir = environment())
   
   #--- add data generation code ---#
-  ds <- genData(30, def, id = "site")#site
-  ds <- addPeriods(ds, 31, "site", perName = "k") #create time periods for each site
+  ds <- genData(10, def, id = "site")#site
+  ds <- addPeriods(ds, 11, "site", perName = "k") #create time periods for each site
   ds <- addColumns(def2, ds)
   #assign the treatment status based on the stepped-wedge design
   #per cluster trt change per wave
-  ds <- trtStepWedge(ds, "site", nWaves = 30, lenWaves = 1, startPer = 1, 
+  ds <- trtStepWedge(ds, "site", nWaves = 10, lenWaves = 1, startPer = 1, 
                      grpName = "A", perName = "k")
   ds$site <- as.factor(ds$site)
   #30 individuals per site per period and generate each individual-level outcome
-  dd <- genCluster(ds, "timeID", numIndsVar = 30, level1ID = "id")
+  dd <- genCluster(ds, "timeID", numIndsVar = 10, level1ID = "id")
   dd <- addColumns(defOut, dd)
   dd[, normk := (k - min(k))/(max(k) - min(k))]#scale time period into range 0-1
   
@@ -50,7 +49,7 @@ s_generate <- function(iter, list_of_defs) {
 }
 
 s_model <- function(train_data, mod) {
-  set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
+  #set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   #######Fitting the GAM model with default penalization 
   fitgam <- mgcv::bam(y ~ A +  s(k) + s(k, site, bs = "fs"), data = train_data, method="fREML")
   res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
@@ -67,7 +66,7 @@ s_model <- function(train_data, mod) {
   B_train <- predict(splines::bs(train_data$k, degree=3, knots=quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])))
   colnames(B_train) <- paste0("Bspline_", 1:ncol(B_train))
   
-
+  
   stan_data <- list(num_data = nrow(train_data),
                     num_basis = ncol(B_train),
                     B = t(B_train),
@@ -75,13 +74,13 @@ s_model <- function(train_data, mod) {
                     y = train_data$y,
                     num_sites = length(unique(train_data$site)),
                     site = train_data$site
-
+                    
   )
   
   # Fit the Bayesian model
   fit <- mod$sample(data = stan_data,
-                    refresh = 0,
-                    show_messages = FALSE)
+                    refresh = 0, 
+                    show_messages = FALSE) 
   
   diagnostics_df <- as_draws_df(fit$sampler_diagnostics())
   div <- sum(diagnostics_df[, 'divergent__'])
@@ -89,6 +88,7 @@ s_model <- function(train_data, mod) {
                           posterior::default_summary_measures()[1:3],
                           quantiles = ~ quantile(., probs = c(0.025, 0.975)),
                           posterior::default_convergence_measures())
+  
   covered_bayes =   (bayes_gam$`2.5%`< 2 & 2 < bayes_gam$`97.5%`)
   
   #Fit a frequentist linear model with the same basis as the Bayesian model, but no penalization
@@ -96,7 +96,7 @@ s_model <- function(train_data, mod) {
   ds_with_bspline <- cbind(train_data,  B_train)
   # Fitting the model using gam
   bspline_terms <- paste(colnames(B_train), collapse = " + ")
-  formula_str <- paste("y ~ A +", bspline_terms)
+  formula_str <- paste("y ~ A + s(site, A, bs = 're') +", bspline_terms)
   fitgam3 <- mgcv::bam(as.formula(formula_str), data = ds_with_bspline, method="fREML")
   res_fitgam3 <- c(summary(fitgam3)$p.coeff["A"], summary(fitgam3)$se["A"])
   range3 <-   res_fitgam3[1] + c(-1,1) * 1.96 *   res_fitgam3[2]
@@ -111,7 +111,7 @@ s_model <- function(train_data, mod) {
                               covered_gam_freq=(range[1] < 2 & 2 < range[2]),
                               covered_bayes,covered_gam_rdn_freq=(range2[1] < 2 & 2 < range2[2]),
                               covered_gam_np_freq=(range3[1] < 2 & 2 < range3[2])
-                              ) %>%
+  ) %>%
     mutate(across(-c(variable,covered_gam_freq, covered_bayes,covered_gam_rdn_freq, covered_gam_np_freq), round, 3))
   
   setnames(model_results, c("est_gam_freq","se_gam_freq","lowci_freq", "upci_freq","variable","est_mean_bayes",
@@ -121,6 +121,7 @@ s_model <- function(train_data, mod) {
                             "div","est_gam_rdn_freq","se_gam_rdn_freq","lowci_freq_rdn", "upci_freq_rdn",
                             "est_gam_np_freq","se_gam_np_freq","lowci_freq_np", "upci_freq_np",
                             "covered_freq","covered_bayes","covered_gam_rdn_freq","covered_gam_np_freq"))
+  
   
   return(model_results)
 }
@@ -141,22 +142,9 @@ s_replicate <- function(iter, mod) {
 }
 
 
-sjob <- Slurm_lapply(1:100, 
-                     FUN=s_replicate, 
-                     mod=mod, 
-                     njobs = 90, 
-                     tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
-                     job_name = "BS_106", 
-                     sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
-                     export = c("s_define","s_generate","s_model","s_single_rep"), 
-                     plan = "wait", 
-                     overwrite=TRUE) 
-res <- Slurm_collect(sjob) # data is a list 
-#res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message 
-res <- rbindlist(res) # converting list to data.table 
+job <- lapply(1:5,function(i) s_replicate(iter=i, mod=mod))
+res6 <- rbindlist(job)
 
-date_stamp <- gsub("-", "", Sys.Date()) 
-dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_test_hier_30clusters.rda"))
-
-
+res6
+round(sapply(res5,mean),3)
+round(sapply(res4,mean),3)
