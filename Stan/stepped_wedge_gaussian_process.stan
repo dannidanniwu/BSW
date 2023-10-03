@@ -1,10 +1,14 @@
+//https://mc-stan.org/docs/stan-users-guide/fit-gp.html
 data {
   int<lower=0> num_data;            // number of data points
-  real k[num_data];                 // The time or feature for the GP
   vector[num_data] y;               // response variable
   int<lower=0, upper=1> A[num_data];// binary variable
   int<lower=1> num_sites;           // number of sites
   int site[num_data];               // site id for each observation
+  int<lower=0> num_times;          // number of unique time points
+  real unique_k[num_times];        // unique time values for the GP
+  int time_idx[num_data];          // index mapping each data point to its time point in unique_k
+ 
 }
 
 parameters {
@@ -21,8 +25,8 @@ parameters {
   real<lower=0> alpha_site;       // GP length scale for f_site
   real<lower=0> rho_site;         // GP scale for f_site
   
-  vector[num_data] f_overall;     // Overall GP function values
-  vector[num_data] f_site[num_sites]; // GP function values for each site
+  vector[num_times] f_overall;     // Overall GP function values
+  vector[num_times] f_site[num_sites]; // GP function values for each site
 }
 
 transformed parameters {
@@ -31,31 +35,31 @@ transformed parameters {
   real beta_A = 0 + 5 * beta_A_raw;
   vector[num_sites] beta_A_site = beta_A + tau * beta_A_site_raw; // Calculate the actual parameter using the raw parameter
 
-  for (i in 1:num_data) {
-    Y_hat[i] = beta_0 + beta_A_site[site[i]] * A[i] + f_site[site[i]][i];
+ for (i in 1:num_data) {
+    Y_hat[i] = beta_0 + beta_A_site[site[i]] * A[i] + f_site[site[i]][time_idx[i]];
   }
 }
 
 model {
-  matrix[num_data, num_data] L_K_overall;
-  matrix[num_data, num_data] K_overall;
+  matrix[num_times, num_times] L_K_overall;
+  matrix[num_times, num_times] K_overall;
   
-  matrix[num_data, num_data] L_K_site;
-  matrix[num_data, num_data] K_site;
+  matrix[num_times, num_times] L_K_site;
+  matrix[num_times, num_times] K_site;
   
   real sq_sigma_lk = square(sigma_lk);
 
   // GP covariance matrix for overall effect
-  K_overall = cov_exp_quad(k, alpha, rho);
-  for (n in 1:num_data) {
+  K_overall = cov_exp_quad(unique_k, alpha, rho);
+  for (n in 1:num_times) {
     K_overall[n, n] = K_overall[n, n] + sq_sigma_lk;  // adding jitter for numerical stability
   }
   
   L_K_overall = cholesky_decompose(K_overall);
 
   // GP covariance matrix for site-specific effects
-  K_site = cov_exp_quad(k, alpha_site, rho_site);
-  for (n in 1:num_data) {
+  K_site = cov_exp_quad(unique_k, alpha_site, rho_site);
+  for (n in 1:num_times) {
     K_site[n, n] = K_site[n, n] + sq_sigma_lk;  // adding jitter for numerical stability
   }
 
@@ -74,7 +78,7 @@ model {
   alpha_site ~ normal(0, 1);
   rho_site ~ inv_gamma(5, 5);
   
-  f_overall ~ multi_normal_cholesky(rep_vector(0, num_data), L_K_overall);
+  f_overall ~ multi_normal_cholesky(rep_vector(0, num_times), L_K_overall);
   sigma_lk ~ std_normal();
 
   // Hierarchical GPs for sites

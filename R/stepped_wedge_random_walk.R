@@ -107,16 +107,18 @@ s_model <- function(train_data, mod) {
                     y = train_data$y,
                     num_sites = length(unique(train_data$site)),
                     site = train_data$site,
-                    k=train_data$k
+                    time_idx=train_data$k +1,
+                    num_times = length(unique(train_data$k)),
+                    unique_k = unique(train_data$k)
                     
   )
   fitgp <- modGP$sample(data = stan_data_gp,
                     refresh = 0, 
                     show_messages = FALSE) 
   
-  diagnostics_df <- as_draws_df(fit$sampler_diagnostics())
-  div <- sum(diagnostics_df[, 'divergent__'])
-  bayes_gam = fit$summary(variables="beta_A",
+  diagnostics_df_gp <- as_draws_df(fitgp$sampler_diagnostics())
+  div_gp <- sum(diagnostics_df_gp[, 'divergent__'])
+  bayes_gam_gp = fitgp$summary(variables="beta_A",
                           posterior::default_summary_measures()[1:3],
                           quantiles = ~ quantile(., probs = c(0.025, 0.975)),
                           posterior::default_convergence_measures())
