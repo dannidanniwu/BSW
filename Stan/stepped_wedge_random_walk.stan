@@ -15,22 +15,23 @@ parameters {
   real<lower=0> sigma_a;          // variance for site-level spline coefficients
   real<lower=0> tau;
   vector[num_basis] mu_a_raw;         // global mean for spline coefficients
-  real beta_A;
+  real beta_A_raw;
   real  beta_0;
   real<lower=0> lambda;
-  vector[num_sites] beta_A_site;
   real<lower=0> sigma_mu_a; // scale for the a coefficients
   matrix[num_sites, num_basis] a_site_raw;
+  vector[num_sites] beta_A_site_raw;
   
 }
 
 transformed parameters {
   vector[num_data] Y_hat;
-  vector[num_sites] a_site_overall;
   matrix[num_sites, num_basis] a_site;
   vector[num_basis] mu_a;         // global mean for spline coefficients
   //print(" beta_A_site: ",  beta_A_site);
-  
+  real beta_A = 0 + 5 * beta_A_raw;
+  vector[num_sites] beta_A_site = beta_A + tau * beta_A_site_raw; // Calculate the actual parameter using the raw parameter
+
   mu_a[1] = mu_a_raw[1];
   //print(" mu_a[1]: ",  mu_a[1]);
   for (i in 2:num_basis){
@@ -54,7 +55,8 @@ transformed parameters {
 
 model {
   sigma ~ student_t(3, 0, 2.5);
-  beta_A ~ normal(0, 5);
+  beta_A_raw ~ normal(0, 1);
+
   to_vector(a_site_raw) ~ normal(0, 1);
    
   tau ~ normal(0, 1);
@@ -66,9 +68,10 @@ model {
   //print("beta_A: ", beta_A);
  // print("tau: ", tau);
   
-  beta_A_site ~ normal(beta_A, tau);
+  
+  beta_A_site_raw ~ normal(0, 1);
   lambda ~ student_t(3, 0, 2.5);//large lambda encourage smooth
-  sigma_mu_a ~ normal(0,1);
+  sigma_mu_a ~ student_t(3, 0, 1);
   
  
   mu_a_raw ~ normal(0, 1);

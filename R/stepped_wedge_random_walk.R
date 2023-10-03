@@ -9,18 +9,22 @@ library(slurmR)
 library(dplyr)
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
-l
+
 # Compile the Stan model
 #mod <- cmdstan_model("./stepped_wedge_time_spline.stan")
 #mod <- cmdstan_model("./stepped_wedge_time_spline_penalized.stan")
 mod <- cmdstan_model("./stepped_wedge_random_walk.stan")
+modGP <- cmdstan_model("./stepped_wedge_gaussian_process.stan")
 
 s_define <- function() {
   #cluster-specific intercept
-  def <- defData(varname = "a", formula = 0, variance = 1)
-  def2 <- defDataAdd(varname = "b", formula = "(k - 0.5)^2", variance =0.4)
+  def <- defData(varname = "a", formula = 0, variance = 0.25)
+  def <- defData(def, varname = "mu_b", formula = 0, dist = "nonrandom")
+  def <- defData(def, varname = "s2_b", formula = 0.4, dist = "nonrandom")
+  
   #A: trt for each cluster and time period
-  defOut <- defDataAdd(varname = "y", formula = "a + b + 2 * A", variance = 1)
+  #b: site-specific time period effect
+  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + 2 * A", variance = 1)
   
   return(list(def = def, def2 =def2, defOut = defOut)) 
 }
@@ -33,7 +37,11 @@ s_generate <- function(iter, list_of_defs) {
   #--- add data generation code ---#
   ds <- genData(10, def, id = "site")#site
   ds <- addPeriods(ds, 11, "site", perName = "k") #create time periods for each site
-  ds <- addColumns(def2, ds)
+  ds <- addCorGen(
+    dtOld = ds, idvar = "site", 
+    rho = 0.95, corstr = "ar1",
+    dist = "normal", param1 = "mu_b", param2 = "s2_b", cnames = "b"
+  )
   #assign the treatment status based on the stepped-wedge design
   #per cluster trt change per wave
   ds <- trtStepWedge(ds, "site", nWaves = 10, lenWaves = 1, startPer = 1, 
@@ -79,6 +87,30 @@ s_model <- function(train_data, mod) {
   
   # Fit the Bayesian model
   fit <- mod$sample(data = stan_data,
+                    refresh = 0, 
+                    show_messages = FALSE) 
+  
+  diagnostics_df <- as_draws_df(fit$sampler_diagnostics())
+  div <- sum(diagnostics_df[, 'divergent__'])
+  bayes_gam = fit$summary(variables="beta_A",
+                          posterior::default_summary_measures()[1:3],
+                          quantiles = ~ quantile(., probs = c(0.025, 0.975)),
+                          posterior::default_convergence_measures())
+  
+  covered_bayes =   (bayes_gam$`2.5%`< 2 & 2 < bayes_gam$`97.5%`)
+  
+  ####Gaussian process model
+  stan_data_gp <- list(num_data = nrow(train_data),
+                    num_basis = ncol(B_train),
+                    B = t(B_train),
+                    A = train_data$A,
+                    y = train_data$y,
+                    num_sites = length(unique(train_data$site)),
+                    site = train_data$site,
+                    k=train_data$k
+                    
+  )
+  fitgp <- modGP$sample(data = stan_data_gp,
                     refresh = 0, 
                     show_messages = FALSE) 
   
