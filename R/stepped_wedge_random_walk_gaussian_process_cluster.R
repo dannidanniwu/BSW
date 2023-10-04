@@ -9,6 +9,7 @@ library(slurmR)
 library(dplyr)
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
+#hierarchical gaussian process:https://mc-stan.org/events/stancon2017-notebooks/stancon2017-trangucci-hierarchical-gps.pdf
 set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0") 
 # Compile the Stan model
 #mod <- cmdstan_model("./stepped_wedge_time_spline.stan")
@@ -56,7 +57,7 @@ s_generate <- function(iter, list_of_defs) {
   
 }
 
-s_model <- function(train_data, mod) {
+s_model <- function(train_data, mod, modGP) {
   set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   #######Fitting the GAM model with default penalization 
   fitgam <- mgcv::bam(y ~ A +  s(k) + s(k, site, bs = "fs"), data = train_data, method="fREML")
@@ -171,18 +172,18 @@ s_model <- function(train_data, mod) {
   return(model_results)
 }
 
-s_single_rep <- function(iter,list_of_defs, mod) {
+s_single_rep <- function(iter,list_of_defs, mod, modGP) {
   
   train_data <- s_generate(iter,list_of_defs)
   
-  model_results <- s_model(train_data, mod)
+  model_results <- s_model(train_data, mod, modGP)
   
   return(model_results)
 }
 
-s_replicate <- function(iter, mod) {
+s_replicate <- function(iter, mod, modGP) {
   list_of_defs = s_define()
-  model_results = s_single_rep(iter,list_of_defs, mod)
+  model_results = s_single_rep(iter,list_of_defs, mod, modGP)
   return(data.table(iter=iter, model_results))
 }
 
@@ -190,6 +191,7 @@ s_replicate <- function(iter, mod) {
 sjob <- Slurm_lapply(1:200, 
                      FUN=s_replicate, 
                      mod=mod, 
+                     modGP=modGP,
                      njobs = 90, 
                      tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
                      job_name = "BS_105", 
