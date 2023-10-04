@@ -18,13 +18,13 @@ mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_random_walk
 
 s_define <- function() {
   #cluster-specific intercept
-  def <- defData(varname = "a", formula = 0, variance = 0.25)
+  def <- defData(varname = "a", formula = 0, variance = 9)
   def <- defData(def, varname = "mu_b", formula = 0, dist = "nonrandom")
-  def <- defData(def, varname = "s2_b", formula = 0.4, dist = "nonrandom")
+  def <- defData(def, varname = "s2_b", formula = 16, dist = "nonrandom")
   
   #A: trt for each cluster and time period
   #b: site-specific time period effect
-  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + 2 * A", variance = 1)
+  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + 5 * A", variance = 40)
   
   return(list(def = def, defOut = defOut)) 
 }
@@ -39,7 +39,7 @@ s_generate <- function(iter, list_of_defs) {
   ds <- addPeriods(ds, 11, "site", perName = "k") #create time periods for each site
   ds <- addCorGen(
     dtOld = ds, idvar = "site", 
-    rho = 0.95, corstr = "ar1",
+    rho = 0.8, corstr = "ar1",
     dist = "normal", param1 = "mu_b", param2 = "s2_b", cnames = "b"
   )
   #assign the treatment status based on the stepped-wedge design
@@ -169,7 +169,7 @@ sjob <- Slurm_lapply(1:100,
                      mod=mod, 
                      njobs = 90, 
                      tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
-                     job_name = "BS_103", 
+                     job_name = "BS_104", 
                      sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
                      export = c("s_define","s_generate","s_model","s_single_rep"), 
                      plan = "wait", 
@@ -180,5 +180,5 @@ res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date()) 
 dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_random_walk.rda"))
+save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_random_walk_noisy.rda"))
 
