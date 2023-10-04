@@ -13,11 +13,12 @@ data {
 
 parameters {
   real<lower=0> sigma;             // noise standard deviation
-  real beta_A_raw;                 // coefficient for A
+  real beta_A;                 // coefficient for A
   real beta_0;                     // intercept
   vector[num_sites] beta_A_site_raw;
   real<lower=0> sigma_lk;
-  
+  vector[num_times] z_site[num_sites];  // New parameter for non-centered parametrization
+
   real<lower=0> tau;
   real<lower=0> alpha;            // GP length scale for f_overall
   real<lower=0> rho;              // GP scale for f_overall
@@ -25,29 +26,20 @@ parameters {
   real<lower=0> alpha_site;       // GP length scale for f_site
   real<lower=0> rho_site;         // GP scale for f_site
   
-  vector[num_times] f_overall;     // Overall GP function values
-  vector[num_times] f_site[num_sites]; // GP function values for each site
+  vector[num_times] z_overall;  // New parameter for non-centered parametrization of f_overall
+
 }
 
 transformed parameters {
   vector[num_data] Y_hat;          // predicted values
-  
-  real beta_A = 0 + 5 * beta_A_raw;
-  vector[num_sites] beta_A_site = beta_A + tau * beta_A_site_raw; // Calculate the actual parameter using the raw parameter
-
- for (i in 1:num_data) {
-    Y_hat[i] = beta_0 + beta_A_site[site[i]] * A[i] + f_site[site[i]][time_idx[i]];
-  }
-}
-
-model {
-  matrix[num_times, num_times] L_K_overall;
-  matrix[num_times, num_times] K_overall;
-  
+  vector[num_times] f_site[num_sites]; // GP function values for each site
   matrix[num_times, num_times] L_K_site;
   matrix[num_times, num_times] K_site;
-  
+  matrix[num_times, num_times] L_K_overall;
   real sq_sigma_lk = square(sigma_lk);
+  vector[num_sites] beta_A_site = beta_A + tau * beta_A_site_raw; // Calculate the actual parameter using the raw parameter
+  vector[num_times] f_overall;
+  matrix[num_times, num_times] K_overall;
 
   // GP covariance matrix for overall effect
   K_overall = cov_exp_quad(unique_k, alpha, rho);
@@ -56,35 +48,50 @@ model {
   }
   
   L_K_overall = cholesky_decompose(K_overall);
-
-  // GP covariance matrix for site-specific effects
-  K_site = cov_exp_quad(unique_k, alpha_site, rho_site);
+  
+  f_overall = L_K_overall * z_overall;
+  K_site = gp_exp_quad_cov(unique_k, alpha_site, rho_site);
+  
   for (n in 1:num_times) {
     K_site[n, n] = K_site[n, n] + sq_sigma_lk;  // adding jitter for numerical stability
   }
-
+  
   L_K_site = cholesky_decompose(K_site);
+  for (s in 1:num_sites) {
+    f_site[s] = f_overall + L_K_site * z_site[s];
+  }
+  
+  
 
-  tau ~ normal(0, 1);
+ for (i in 1:num_data) {
+    Y_hat[i] = beta_0 + beta_A_site[site[i]] * A[i] + f_site[site[i]][time_idx[i]];
+  }
+}
+
+model {
+
+  z_overall ~ std_normal();
+
+
+  for (s in 1:num_sites) {
+    z_site[s] ~ std_normal();  // New prior for non-centered parametrization
+  }
+
+
+  tau ~ std_normal();
   
   sigma ~ student_t(3, 0, 2.5);
-  beta_A_raw ~ normal(0, 1);
-  beta_0 ~ normal(0, 1);
-  beta_A_site_raw ~ normal(0, 1);
+  beta_A ~ normal(0, 5);
+  beta_0 ~ std_normal();
+  beta_A_site_raw ~ std_normal();
   
-  alpha ~ normal(0, 1);
+  alpha ~ std_normal();
   rho ~ inv_gamma(5, 5);
   
-  alpha_site ~ normal(0, 1);
+  alpha_site ~ std_normal();
   rho_site ~ inv_gamma(5, 5);
   
-  f_overall ~ multi_normal_cholesky(rep_vector(0, num_times), L_K_overall);
   sigma_lk ~ std_normal();
-
-  // Hierarchical GPs for sites
-  for (s in 1:num_sites) {
-    f_site[s] ~ multi_normal_cholesky(f_overall, L_K_site);
-  }
 
   y ~ normal(Y_hat, sigma);
 }
