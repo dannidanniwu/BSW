@@ -13,7 +13,7 @@ set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
 # Compile the Stan model
 #mod <- cmdstan_model("./stepped_wedge_time_spline.stan")
 #mod <- cmdstan_model("./stepped_wedge_time_spline_penalized.stan")
-mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_random_walk.stan")
+mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_two_neibors_random_walk.stan")
 #modGP <- cmdstan_model("./stepped_wedge_gaussian_process.stan")
 
 s_define <- function() {
@@ -99,7 +99,20 @@ s_model <- function(train_data, mod) {
   
   covered_bayes =   (bayes_gam$`2.5%`< 2 & 2 < bayes_gam$`97.5%`)
   
- 
+  ####Gaussian process model
+  stan_data_gp <- list(num_data = nrow(train_data),
+                       num_basis = ncol(B_train),
+                       B = t(B_train),
+                       A = train_data$A,
+                       y = train_data$y,
+                       num_sites = length(unique(train_data$site)),
+                       site = train_data$site,
+                       time_idx=train_data$k +1,
+                       num_times = length(unique(train_data$k)),
+                       unique_k = unique(train_data$k)
+                       
+  )
+  
   #Fit a frequentist linear model with the same basis as the Bayesian model, but no penalization
   # Incorporating the B-spline basis into the data
   ds_with_bspline <- cbind(train_data,  B_train)
@@ -151,12 +164,12 @@ s_replicate <- function(iter, mod) {
 }
 
 
-sjob <- Slurm_lapply(1:100, 
+sjob <- Slurm_lapply(1:1000, 
                      FUN=s_replicate, 
                      mod=mod, 
                      njobs = 90, 
                      tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
-                     job_name = "BS_104", 
+                     job_name = "BS_106", 
                      sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
                      export = c("s_define","s_generate","s_model","s_single_rep"), 
                      plan = "wait", 
@@ -167,5 +180,5 @@ res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date()) 
 dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_random_walk_noisy.rda"))
+save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_two_neibors_random_walk_1000iter.rda"))
 
