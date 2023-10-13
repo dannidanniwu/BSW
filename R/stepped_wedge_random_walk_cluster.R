@@ -11,10 +11,9 @@ library(dplyr)
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
 set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0") 
 # Compile the Stan model
-#mod <- cmdstan_model("./stepped_wedge_time_spline.stan")
-#mod <- cmdstan_model("./stepped_wedge_time_spline_penalized.stan")
-mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_two_neibors_random_walk.stan")
-#modGP <- cmdstan_model("./stepped_wedge_gaussian_process.stan")
+#mod <- cmdstan_model("./stepped_wedge_random_walk.stan")
+mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_random_walk.stan")
+#mod <- cmdstan_model("./stepped_wedge_two_neibors_random_walk.stan")
 
 s_define <- function() {
   #cluster-specific intercept
@@ -59,6 +58,19 @@ s_generate <- function(iter, list_of_defs) {
 s_model <- function(train_data, mod) {
   set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   #######Fitting the GAM model with default penalization 
+  fitsat <- lm(y ~ A +  as.factor(k) + as.factor(k)*as.factor(site), data = train_data)
+  res_fitsat <- c(coef(fitsat)["A"], summary(fitsat)$coefficients["A", "Std. Error"])
+  range_sat <-   res_fitsat[1] + c(-1,1) * 1.96 *   res_fitsat[2]
+  
+  fitnotime <- lm(y ~ A, data = train_data)
+  res_fitnotime <- c(coef(fitnotime)["A"], summary(fitnotime)$coefficients["A", "Std. Error"])
+  range_notime <-   res_fitnotime[1] + c(-1,1) * 1.96 *   res_fitnotime[2]
+  
+  fitlntime <- lm(y ~ A + k, data = train_data)
+  res_lntime <- c(coef(fitlntime)["A"], summary(fitlntime)$coefficients["A", "Std. Error"])
+  range_lntime <-   res_lntime[1] + c(-1,1) * 1.96 *   res_lntime[2]
+  
+  
   fitgam <- mgcv::bam(y ~ A +  s(k) + s(k, site, bs = "fs"), data = train_data, method="fREML")
   res_fitgam <- c(summary(fitgam)$p.coeff["A"], summary(fitgam)$se["A"])
   range <-   res_fitgam[1] + c(-1,1) * 1.96 *   res_fitgam[2]
@@ -132,18 +144,33 @@ s_model <- function(train_data, mod) {
                               gam_np_lowci=range3[1], gam_np_upci=range3[2],
                               covered_gam_freq=(range[1] < 2 & 2 < range[2]),
                               covered_bayes,covered_gam_rdn_freq=(range2[1] < 2 & 2 < range2[2]),
-                              covered_gam_np_freq=(range3[1] < 2 & 2 < range3[2])
+                              covered_gam_np_freq=(range3[1] < 2 & 2 < range3[2]),
+                                                   est_sat = res_fitsat[1],
+                                                   se_sat = res_fitsat[2],
+                                                   sat_lowci = range_sat[1],
+                                                   sat_upci = range_sat[2],
+                                                   est_notime = res_fitnotime[1],
+                                                   se_notime = res_fitnotime[2],
+                                                   notime_lowci = range_notime[1],
+                                                   notime_upci = range_notime[2],
+                                                   est_lntime = res_lntime[1],
+                                                   se_lntime = res_lntime[2],
+                                                   lntime_lowci = range_lntime[1],
+                                                   lntime_upci = range_lntime[2],
+                              covered_sat = res_fitsat[1] < 2 & 2 < res_fitsat[2],
+                              covered_notime = res_fitnotime[1] < 2 & 2 < res_fitnotime[2],
+                              covered_lntime = res_lntime[1] < 2 & 2 < res_lntime[2]
+                              
   ) %>%
     mutate(across(-c(variable,covered_gam_freq, covered_bayes,covered_gam_rdn_freq, covered_gam_np_freq), round, 3))
   
-  setnames(model_results, c("est_gam_freq","se_gam_freq","lowci_freq", "upci_freq","variable","est_mean_bayes",
-                            "est_med_bayes","est_sd_bayes",
-                            "lowci_bayes",
-                            "upci_bayes","rhat","ess_bulk","ess_tail",
-                            "div","est_gam_rdn_freq","se_gam_rdn_freq","lowci_freq_rdn", "upci_freq_rdn",
-                            "est_gam_np_freq","se_gam_np_freq","lowci_freq_np", "upci_freq_np",
-                            "covered_freq","covered_bayes","covered_gam_rdn_freq","covered_gam_np_freq"))
-  
+  setnames(model_results, c("est_gam_freq", "se_gam_freq", "lowci_freq", "upci_freq", "variable", "est_mean_bayes",
+                            "est_med_bayes", "est_sd_bayes", "lowci_bayes", "upci_bayes", "rhat", "ess_bulk", "ess_tail", "div", 
+                            "est_gam_rdn_freq", "se_gam_rdn_freq", "lowci_freq_rdn", "upci_freq_rdn", "est_gam_np_freq", "se_gam_np_freq", 
+                            "lowci_freq_np", "upci_freq_np", "covered_freq", "covered_bayes", "covered_gam_rdn_freq", "covered_gam_np_freq",
+                            "est_sat", "se_sat", "sat_lowci", "sat_upci", "est_notime", "se_notime", "notime_lowci", "notime_upci", 
+                            "est_lntime", "se_lntime", "lntime_lowci", "lntime_upci","covered_sat",
+                            "covered_notime","covered_lntime"))
   
   return(model_results)
 }
@@ -163,8 +190,10 @@ s_replicate <- function(iter, mod) {
   return(data.table(iter=iter, model_results))
 }
 
+# job <- lapply(1,function(i) s_replicate(iter=i, mod=mod))
+# res6 <- rbindlist(job)
 
-sjob <- Slurm_lapply(1:1000, 
+sjob <- Slurm_lapply(1:500, 
                      FUN=s_replicate, 
                      mod=mod, 
                      njobs = 90, 
@@ -180,5 +209,5 @@ res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date()) 
 dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_two_neibors_random_walk_1000iter.rda"))
+save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_random_walk_500iter_addcompare.rda"))
 
