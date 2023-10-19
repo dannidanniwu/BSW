@@ -55,7 +55,7 @@ s_generate <- function(iter, coefA, list_of_defs) {
   
 }
 
-s_model <- function(train_data, mod) {
+s_model <- function(train_data, coefA, mod) {
   set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   #######Fitting the GAM model with default penalization 
   fitsat <- lmer(y ~ A + as.factor(k) + (as.factor(k)|site), data = train_data)
@@ -71,7 +71,7 @@ s_model <- function(train_data, mod) {
   fitlntime <- lmer(y ~ A + k +  (k|site), data = train_data)
   coef_A <- fixef(fitlntime)["A"]
   se_A <- summary(fitlntime)$coefficients["A", "Std. Error"]
-  res_fitlntime <- c(coef_A, se_A)
+  res_lntime <- c(coef_A, se_A)
   range_lntime <-   res_lntime[1] + c(-1,1) * 1.96 *   res_lntime[2]
   
   
@@ -97,7 +97,9 @@ s_model <- function(train_data, mod) {
                     A = train_data$A,
                     y = train_data$y,
                     num_sites = length(unique(train_data$site)),
-                    site = train_data$site
+                    site = train_data$site,
+                    iter_warmup = 500,
+                    iter_sampling = 2500
                     
   )
   
@@ -113,7 +115,7 @@ s_model <- function(train_data, mod) {
                           quantiles = ~ quantile(., probs = c(0.025, 0.975)),
                           posterior::default_convergence_measures())
   
-  covered_bayes =   (bayes_gam$`2.5%`< 2 & 2 < bayes_gam$`97.5%`)
+  covered_bayes =   (bayes_gam$`2.5%`< coefA & coefA < bayes_gam$`97.5%`)
   
   ####Gaussian process model
   stan_data_gp <- list(num_data = nrow(train_data),
@@ -161,9 +163,9 @@ s_model <- function(train_data, mod) {
                                                    se_lntime = res_lntime[2],
                                                    lntime_lowci = range_lntime[1],
                                                    lntime_upci = range_lntime[2],
-                              covered_sat = res_fitsat[1] < 2 & 2 < res_fitsat[2],
-                              covered_notime = res_fitnotime[1] < 2 & 2 < res_fitnotime[2],
-                              covered_lntime = res_lntime[1] < 2 & 2 < res_lntime[2]
+                              covered_sat = res_fitsat[1] < coefA & coefA < res_fitsat[2],
+                              covered_notime = res_fitnotime[1] < coefA & coefA < res_fitnotime[2],
+                              covered_lntime = res_lntime[1] < coefA & coefA < res_lntime[2]
                               
   ) %>%
     mutate(across(-c(variable,covered_gam_freq, covered_bayes,covered_gam_rdn_freq, covered_gam_np_freq), round, 3))
@@ -183,7 +185,7 @@ s_single_rep <- function(iter,list_of_defs, mod) {
   
   train_data <- s_generate(iter, coefA, list_of_defs)
   
-  model_results <- s_model(train_data, mod)
+  model_results <- s_model(train_data, coefA, mod)
   
   return(model_results)
 }
@@ -199,7 +201,12 @@ results.aggregated2 <- vector("list", length= length(scenarios))
 
 for(r in  1:9){
   coefA = scenarios[r]
-  sjob <- Slurm_lapply(1:200, 
+  
+  # res <- replicate(1, s_replicate(iter=1,coefA = coefA,
+  #                                 mod=mod
+  #                                     ))
+
+  sjob <- Slurm_lapply(1:100, 
                      FUN=s_replicate, 
                      coefA = coefA,
                      mod=mod, 
