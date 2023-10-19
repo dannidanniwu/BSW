@@ -23,12 +23,12 @@ s_define <- function() {
   
   #A: trt for each cluster and time period
   #b: site-specific time period effect
-  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + 2 * A", variance = 1)
+  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + ..coefA * A", variance = 1)
   
   return(list(def = def, defOut = defOut)) 
 }
 
-s_generate <- function(iter, list_of_defs) {
+s_generate <- function(iter, coefA, list_of_defs) {
   
   set.seed(iter)
   list2env(list_of_defs, envir = environment())
@@ -58,16 +58,20 @@ s_generate <- function(iter, list_of_defs) {
 s_model <- function(train_data, mod) {
   set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   #######Fitting the GAM model with default penalization 
-  fitsat <- lm(y ~ A +  as.factor(k) + as.factor(k)*as.factor(site), data = train_data)
-  res_fitsat <- c(coef(fitsat)["A"], summary(fitsat)$coefficients["A", "Std. Error"])
+  fitsat <- lmer(y ~ A + as.factor(k) + (as.factor(k)|site), data = train_data)
+  coef_A <- fixef(fitsat)["A"]
+  se_A <- summary(fitsat)$coefficients["A", "Std. Error"]
+  res_fitsat <- c(coef_A, se_A)
   range_sat <-   res_fitsat[1] + c(-1,1) * 1.96 *   res_fitsat[2]
   
   fitnotime <- lm(y ~ A, data = train_data)
   res_fitnotime <- c(coef(fitnotime)["A"], summary(fitnotime)$coefficients["A", "Std. Error"])
   range_notime <-   res_fitnotime[1] + c(-1,1) * 1.96 *   res_fitnotime[2]
   
-  fitlntime <- lm(y ~ A + k, data = train_data)
-  res_lntime <- c(coef(fitlntime)["A"], summary(fitlntime)$coefficients["A", "Std. Error"])
+  fitlntime <- lmer(y ~ A + k +  (k|site), data = train_data)
+  coef_A <- fixef(fitlntime)["A"]
+  se_A <- summary(fitlntime)$coefficients["A", "Std. Error"]
+  res_fitlntime <- c(coef_A, se_A)
   range_lntime <-   res_lntime[1] + c(-1,1) * 1.96 *   res_lntime[2]
   
   
@@ -177,37 +181,46 @@ s_model <- function(train_data, mod) {
 
 s_single_rep <- function(iter,list_of_defs, mod) {
   
-  train_data <- s_generate(iter,list_of_defs)
+  train_data <- s_generate(iter, coefA, list_of_defs)
   
   model_results <- s_model(train_data, mod)
   
   return(model_results)
 }
 
-s_replicate <- function(iter, mod) {
+s_replicate <- function(iter, coefA, mod) {
   list_of_defs = s_define()
   model_results = s_single_rep(iter,list_of_defs, mod)
-  return(data.table(iter=iter, model_results))
+  return(data.table(iter=iter, coefA = coefA ,model_results))
 }
 
-# job <- lapply(1,function(i) s_replicate(iter=i, mod=mod))
-# res6 <- rbindlist(job)
+scenarios = seq(0, 2, length.out = 9)
+results.aggregated2 <- vector("list", length= length(scenarios))
 
-sjob <- Slurm_lapply(1:500, 
+for(r in  1:9){
+  coefA = scenarios[r]
+  sjob <- Slurm_lapply(1:200, 
                      FUN=s_replicate, 
+                     coefA = coefA,
                      mod=mod, 
                      njobs = 90, 
                      tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
-                     job_name = "BS_106", 
-                     sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
+                     job_name = "BS_107", 
+                     sbatch_opt = list(time = "24:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
                      export = c("s_define","s_generate","s_model","s_single_rep"), 
                      plan = "wait", 
                      overwrite=TRUE) 
-res <- Slurm_collect(sjob) # data is a list 
-#res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message 
-res <- rbindlist(res) # converting list to data.table 
+    res <- Slurm_collect(sjob) # data is a list 
+    #res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message 
+    res <- rbindlist(res) # converting list to data.table 
+    
+    date_stamp <- gsub("-", "", Sys.Date()) 
+    dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
+    save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/scenarios",r,".rda"))
+    results.aggregated2[[r]] <- res
+}
 
-date_stamp <- gsub("-", "", Sys.Date()) 
-dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/stepped_wedge_random_walk_500iter_addcompare.rda"))
+date_stamp <- gsub("-", "", Sys.Date())
+dir.create(file.path("/gpfs/home/dw2625/r/BS/", date_stamp), showWarnings = FALSE)
+save(results.aggregated2, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/all_scenarios.rda"))
 
