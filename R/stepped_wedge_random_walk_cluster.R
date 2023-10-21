@@ -22,19 +22,19 @@ s_define <- function() {
   
   #A: trt for each cluster and time period
   #b: site-specific time period effect
-  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + ..coefA * A", variance = 1)
+  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.01 * k^2 + ..coefA * A", variance = 1)
   
   return(list(def = def, defOut = defOut)) 
 }
 
-s_generate <- function(iter, coefA, list_of_defs) {
+s_generate <- function(iter, coefA, ncluster, list_of_defs) {
   
   set.seed(iter)
   list2env(list_of_defs, envir = environment())
   
   #--- add data generation code ---#
-  ds <- genData(10, def, id = "site")#site
-  ds <- addPeriods(ds, 11, "site", perName = "k") #create time periods for each site
+  ds <- genData(ncluster, def, id = "site")#site
+  ds <- addPeriods(ds, 5*ncluster+20, "site", perName = "k") #create time periods for each site;10 before/after the 1st/last switch;5 time periods a swtich
   ds <- addCorGen(
     dtOld = ds, idvar = "site", 
     rho = 0.95, corstr = "ar1",
@@ -42,7 +42,7 @@ s_generate <- function(iter, coefA, list_of_defs) {
   )
   #assign the treatment status based on the stepped-wedge design
   #per cluster trt change per wave
-  ds <- trtStepWedge(ds, "site", nWaves = 10, lenWaves = 1, startPer = 1, 
+  ds <- trtStepWedge(ds, "site", nWaves = ncluster, lenWaves = 5, startPer = 10, 
                      grpName = "A", perName = "k")
   ds$site <- as.factor(ds$site)
   #30 individuals per site per period and generate each individual-level outcome
@@ -55,13 +55,13 @@ s_generate <- function(iter, coefA, list_of_defs) {
 }
 
 s_model <- function(train_data, coefA, mod) {
-  set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
-  #######Fitting the GAM model with default penalization 
-  fitsat <- lmer(y ~ A + as.factor(k) + (as.factor(k)|site), data = train_data)
-  coef_A <- fixef(fitsat)["A"]
-  se_A <- summary(fitsat)$coefficients["A", "Std. Error"]
-  res_fitsat <- c(coef_A, se_A)
-  range_sat <-   res_fitsat[1] + c(-1,1) * 1.96 *   res_fitsat[2]
+ # set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
+  # #######Fitting the GAM model with default penalization 
+  # fitsat <- lmer(y ~ A + as.factor(k) + (as.factor(k)|site), data = train_data)
+  # coef_A <- fixef(fitsat)["A"]
+  # se_A <- summary(fitsat)$coefficients["A", "Std. Error"]
+  # res_fitsat <- c(coef_A, se_A)
+  # range_sat <-   res_fitsat[1] + c(-1,1) * 1.96 *   res_fitsat[2]
   
   fitnotime <- lm(y ~ A, data = train_data)
   res_fitnotime <- c(coef(fitnotime)["A"], summary(fitnotime)$coefficients["A", "Std. Error"])
@@ -106,7 +106,7 @@ s_model <- function(train_data, coefA, mod) {
                     refresh = 0, 
                     iter_warmup = 5,
                     iter_sampling = 5,
-                    show_messages = FALSE) 
+                    show_messages = TRUE) 
   
   diagnostics_df <- as_draws_df(fit$sampler_diagnostics())
   div <- sum(diagnostics_df[, 'divergent__'])
@@ -132,7 +132,7 @@ s_model <- function(train_data, coefA, mod) {
                     refresh = 0, 
                     iter_warmup = 5,
                     iter_sampling = 5,
-                    show_messages = FALSE) 
+                    show_messages = TRUE) 
   
   diagnostics_df_sd10 <- as_draws_df(fit_sd10$sampler_diagnostics())
   div_sd10 <- sum(diagnostics_df_sd10[, 'divergent__'])
@@ -162,10 +162,10 @@ s_model <- function(train_data, coefA, mod) {
                               gam_rdn_lowci=range2[1], gam_rdn_upci=range2[2],
                               est_gam_freq_np = res_fitgam3[1], se_gam_freq_np=res_fitgam3[2], 
                               gam_np_lowci=range3[1], gam_np_upci=range3[2],
-                              covered_gam_freq=(range[1] < 2 & 2 < range[2]),
+                              covered_gam_freq=(range[1] < coefA & coefA < range[2]),
                               covered_bayes,covered_bayes_sd10,
-                              covered_gam_rdn_freq=(range2[1] < 2 & 2 < range2[2]),
-                              covered_gam_np_freq=(range3[1] < 2 & 2 < range3[2]),
+                              covered_gam_rdn_freq=(range2[1] < coefA & coefA < range2[2]),
+                              covered_gam_np_freq=(range3[1] < coefA & coefA < range3[2]),
                                                    est_sat = res_fitsat[1],
                                                    se_sat = res_fitsat[2],
                                                    sat_lowci = range_sat[1],
@@ -204,50 +204,51 @@ s_model <- function(train_data, coefA, mod) {
   return(model_results)
 }
 
-s_single_rep <- function(iter,list_of_defs, mod) {
+s_single_rep <- function(iter, coefA, ncluster, list_of_defs, mod) {
   
-  train_data <- s_generate(iter, coefA, list_of_defs)
+  train_data <- s_generate(iter, coefA, ncluster, list_of_defs)
   
   model_results <- s_model(train_data, coefA, mod)
   
   return(model_results)
 }
 
-s_replicate <- function(iter, coefA, mod) {
+s_replicate <- function(iter, coefA, ncluster, mod) {
   list_of_defs = s_define()
-  model_results = s_single_rep(iter,list_of_defs, mod)
-  return(data.table(iter=iter, coefA = coefA ,model_results))
+  model_results = s_single_rep(iter, coefA, ncluster,list_of_defs, mod)
+  return(data.table(iter=iter, coefA = coefA , ncluster=ncluster, model_results))
 }
 
-scenarios = seq(0, 2, length.out = 2)
+scenarios = expand.grid(coefA=seq(0, 1.25, length.out = 2),ncluster=c(3))
 results.aggregated2 <- vector("list", length= length(scenarios))
 
-for (r in 1: length(scenarios)){
-  iter = scenarios[r]
-
-  # res <- replicate(1, s_replicate(iter=1,coefA = coefA,
-  #                                 mod=mod
-  #                                     ))
+for (i in 1: dim(scenarios)[1]){
+  coefA = scenarios[i,"coefA"]
+  ncluster= scenarios[i,"ncluster"]
+  res <- replicate(1, s_replicate(iter=1,coefA = coefA,ncluster=ncluster,
+                                  mod=mod
+                                      ))
   
-  sjob <- Slurm_lapply(1:2, 
-                 FUN=s_replicate, 
-                 coefA = coefA,
-                 mod=mod, 
-                 njobs = 2, 
-                 tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
-                 job_name = "BS_110", 
-                 sbatch_opt = list(time = "4:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
-                 export = c("s_define","s_generate","s_model","s_single_rep"), 
-                 plan = "wait", 
-                 overwrite=TRUE) 
-  res <- Slurm_collect(sjob) # data is a list
-  #res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
-  res <- rbindlist(res) # converting list to data.table
-  
-  date_stamp <- gsub("-", "", Sys.Date())
-  dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
-  save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/scenarios",r,".rda"))
-  results.aggregated2[[r]] <- res
+  # sjob <- Slurm_lapply(1:2, 
+  #                FUN=s_replicate, 
+  #                coefA = coefA,
+  #                ncluster = ncluster,
+  #                mod=mod, 
+  #                njobs = 2, 
+  #                tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
+  #                job_name = "BS_110", 
+  #                sbatch_opt = list(time = "4:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
+  #                export = c("s_define","s_generate","s_model","s_single_rep"), 
+  #                plan = "wait", 
+  #                overwrite=TRUE) 
+  # res <- Slurm_collect(sjob) # data is a list
+  # #res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
+  # res <- rbindlist(res) # converting list to data.table
+  # 
+  # date_stamp <- gsub("-", "", Sys.Date())
+  # dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
+  # save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/scenarios",r,".rda"))
+  results.aggregated2[[i]] <- res
 }
 
 date_stamp <- gsub("-", "", Sys.Date())

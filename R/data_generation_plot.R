@@ -1,3 +1,4 @@
+library(ggplot2)
 dp <- dd[, .(avg = mean(y)), keyby = .(A, site, k)]
 
 ggplot(data = dp, aes(x = k, y = avg)) +
@@ -21,5 +22,16 @@ ggplot(data = dd, aes(x = k, y = y)) +
         strip.text = element_text(size = 8),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank()) +
-  xlim(c(0, 24)) +
+  xlim(c(0, 10)) +
   guides(color = guide_legend(override.aes = list(size = 2)))
+
+dSum <- dd[, .(Y = mean(y)), keyby = .(site, k, A, startTrt)]
+
+ggplot(data = dSum, 
+       aes(x = k, y = Y, group = interaction(site, A))) +
+  geom_line(aes(color = factor(A))) +
+  facet_grid(startTrt~.) +
+  scale_x_continuous(breaks = seq(0, 36, by = 5), name = "week") +
+  scale_color_manual(values = c("#b8cce4", "#4e81ba")) +
+  theme(panel.grid = element_blank(),
+        legend.position = "none") 
