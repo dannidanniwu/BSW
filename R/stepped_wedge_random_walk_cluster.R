@@ -13,7 +13,6 @@ set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
 # Compile the Stan model
 #mod <- cmdstan_model("./stepped_wedge_random_walk.stan")
 mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_random_walk.stan")
-#mod <- cmdstan_model("./stepped_wedge_two_neibors_random_walk.stan")
 
 s_define <- function() {
   #cluster-specific intercept
@@ -97,15 +96,16 @@ s_model <- function(train_data, coefA, mod) {
                     A = train_data$A,
                     y = train_data$y,
                     num_sites = length(unique(train_data$site)),
-                    site = train_data$site,
-                    iter_warmup = 500,
-                    iter_sampling = 2500
+                    sigma_beta_A = 5,
+                    site = train_data$site
                     
   )
   
   # Fit the Bayesian model
   fit <- mod$sample(data = stan_data,
                     refresh = 0, 
+                    iter_warmup = 5,
+                    iter_sampling = 5,
                     show_messages = FALSE) 
   
   diagnostics_df <- as_draws_df(fit$sampler_diagnostics())
@@ -117,19 +117,32 @@ s_model <- function(train_data, coefA, mod) {
   
   covered_bayes =   (bayes_gam$`2.5%`< coefA & coefA < bayes_gam$`97.5%`)
   
-  ####Gaussian process model
-  stan_data_gp <- list(num_data = nrow(train_data),
-                       num_basis = ncol(B_train),
-                       B = t(B_train),
-                       A = train_data$A,
-                       y = train_data$y,
-                       num_sites = length(unique(train_data$site)),
-                       site = train_data$site,
-                       time_idx=train_data$k +1,
-                       num_times = length(unique(train_data$k)),
-                       unique_k = unique(train_data$k)
-                       
+  stan_data_sd10 <- list(num_data = nrow(train_data),
+                    num_basis = ncol(B_train),
+                    B = t(B_train),
+                    A = train_data$A,
+                    y = train_data$y,
+                    num_sites = length(unique(train_data$site)),
+                    sigma_beta_A = 10,
+                    site = train_data$site
+                    
   )
+  
+  fit_sd10 <- mod$sample(data = stan_data,
+                    refresh = 0, 
+                    iter_warmup = 5,
+                    iter_sampling = 5,
+                    show_messages = FALSE) 
+  
+  diagnostics_df_sd10 <- as_draws_df(fit_sd10$sampler_diagnostics())
+  div_sd10 <- sum(diagnostics_df_sd10[, 'divergent__'])
+  bayes_gam_sd10 = fit_sd10$summary(variables="beta_A",
+                          posterior::default_summary_measures()[1:3],
+                          quantiles = ~ quantile(., probs = c(0.025, 0.975)),
+                          posterior::default_convergence_measures())
+  
+  bayes_gam_sd10 =bayes_gam_sd10[,-1]
+  covered_bayes_sd10 =   (bayes_gam_sd10$`2.5%`< coefA & coefA < bayes_gam_sd10$`97.5%`)
   
   #Fit a frequentist linear model with the same basis as the Bayesian model, but no penalization
   # Incorporating the B-spline basis into the data
@@ -143,13 +156,15 @@ s_model <- function(train_data, coefA, mod) {
   
   
   model_results <- data.table(est_gam_freq= res_fitgam[1], se_gam_freq=res_fitgam[2], 
-                              gam_lowci=range[1], gam_upci=range[2], bayes_gam,div, 
+                              gam_lowci=range[1], gam_upci=range[2], bayes_gam,div, bayes_gam_sd10,
+                              div_sd10,
                               est_gam_freq_rdn = res_fitgam2[1], se_gam_freq_rdn=res_fitgam2[2], 
                               gam_rdn_lowci=range2[1], gam_rdn_upci=range2[2],
                               est_gam_freq_np = res_fitgam3[1], se_gam_freq_np=res_fitgam3[2], 
                               gam_np_lowci=range3[1], gam_np_upci=range3[2],
                               covered_gam_freq=(range[1] < 2 & 2 < range[2]),
-                              covered_bayes,covered_gam_rdn_freq=(range2[1] < 2 & 2 < range2[2]),
+                              covered_bayes,covered_bayes_sd10,
+                              covered_gam_rdn_freq=(range2[1] < 2 & 2 < range2[2]),
                               covered_gam_np_freq=(range3[1] < 2 & 2 < range3[2]),
                                                    est_sat = res_fitsat[1],
                                                    se_sat = res_fitsat[2],
@@ -167,16 +182,24 @@ s_model <- function(train_data, coefA, mod) {
                               covered_notime = res_fitnotime[1] < coefA & coefA < res_fitnotime[2],
                               covered_lntime = res_lntime[1] < coefA & coefA < res_lntime[2]
                               
-  ) %>%
-    mutate(across(-c(variable,covered_gam_freq, covered_bayes,covered_gam_rdn_freq, covered_gam_np_freq), round, 3))
+  ) 
   
   setnames(model_results, c("est_gam_freq", "se_gam_freq", "lowci_freq", "upci_freq", "variable", "est_mean_bayes",
                             "est_med_bayes", "est_sd_bayes", "lowci_bayes", "upci_bayes", "rhat", "ess_bulk", "ess_tail", "div", 
+                            "est_mean_bayes10",
+                            "est_med_bayes10","est_sd_bayes10",
+                            "lowci_bayes10",
+                            "upci_bayes10","rhat_bayes10","ess_bulk_bayes10","ess_tail_bayes10",
+                            "div_bayes10",
                             "est_gam_rdn_freq", "se_gam_rdn_freq", "lowci_freq_rdn", "upci_freq_rdn", "est_gam_np_freq", "se_gam_np_freq", 
-                            "lowci_freq_np", "upci_freq_np", "covered_freq", "covered_bayes", "covered_gam_rdn_freq", "covered_gam_np_freq",
+                            "lowci_freq_np", "upci_freq_np", "covered_freq", "covered_bayes","covered_bayes10", "covered_gam_rdn_freq",
+                            "covered_gam_np_freq",
                             "est_sat", "se_sat", "sat_lowci", "sat_upci", "est_notime", "se_notime", "notime_lowci", "notime_upci", 
                             "est_lntime", "se_lntime", "lntime_lowci", "lntime_upci","covered_sat",
                             "covered_notime","covered_lntime"))
+  
+  model_results <- model_results%>%
+    mutate(across(-c(variable,covered_freq, covered_bayes,covered_bayes10,covered_gam_rdn_freq, covered_gam_np_freq), round, 3))
   
   return(model_results)
 }
@@ -196,38 +219,40 @@ s_replicate <- function(iter, coefA, mod) {
   return(data.table(iter=iter, coefA = coefA ,model_results))
 }
 
-scenarios = seq(0, 2, length.out = 9)
+scenarios = seq(0, 2, length.out = 2)
 results.aggregated2 <- vector("list", length= length(scenarios))
 
-for(r in  1:9){
-  coefA = scenarios[r]
-  
+for (r in 1: length(scenarios)){
+  iter = scenarios[r]
+
   # res <- replicate(1, s_replicate(iter=1,coefA = coefA,
   #                                 mod=mod
   #                                     ))
-
-  sjob <- Slurm_lapply(1:100, 
-                     FUN=s_replicate, 
-                     coefA = coefA,
-                     mod=mod, 
-                     njobs = 90, 
-                     tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
-                     job_name = "BS_107", 
-                     sbatch_opt = list(time = "24:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
-                     export = c("s_define","s_generate","s_model","s_single_rep"), 
-                     plan = "wait", 
-                     overwrite=TRUE) 
-    res <- Slurm_collect(sjob) # data is a list 
-    #res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message 
-    res <- rbindlist(res) # converting list to data.table 
-    
-    date_stamp <- gsub("-", "", Sys.Date()) 
-    dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE) 
-    save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/scenarios",r,".rda"))
-    results.aggregated2[[r]] <- res
+  
+  sjob <- Slurm_lapply(1:2, 
+                 FUN=s_replicate, 
+                 coefA = coefA,
+                 mod=mod, 
+                 njobs = 2, 
+                 tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
+                 job_name = "BS_110", 
+                 sbatch_opt = list(time = "4:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"), 
+                 export = c("s_define","s_generate","s_model","s_single_rep"), 
+                 plan = "wait", 
+                 overwrite=TRUE) 
+  res <- Slurm_collect(sjob) # data is a list
+  #res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
+  res <- rbindlist(res) # converting list to data.table
+  
+  date_stamp <- gsub("-", "", Sys.Date())
+  dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
+  save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/scenarios",r,".rda"))
+  results.aggregated2[[r]] <- res
 }
 
 date_stamp <- gsub("-", "", Sys.Date())
-dir.create(file.path("/gpfs/home/dw2625/r/BS/", date_stamp), showWarnings = FALSE)
-save(results.aggregated2, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/all_scenarios.rda"))
+dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
+save(results.aggregated2, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/all_scenarios.rda"))
+
+
 

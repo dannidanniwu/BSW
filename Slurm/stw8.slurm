@@ -11,4 +11,4 @@
 module load r/4.1.1
 cd /gpfs/data/troxellab/danniw/r/BS
 
-Rscript --vanilla stepped_wedge_test_hier_cluster.R
+Rscript --vanilla stepped_wedge_random_walk_cluster.R

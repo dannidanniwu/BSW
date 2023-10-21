@@ -6,7 +6,7 @@ data {
   int<lower=0, upper=1> A[num_data];// binary variable
   int<lower=1> num_sites;           // number of sites
   int site[num_data];               // site id for each observation
-
+  real sigma_beta_A;
   
 }
 
@@ -54,7 +54,7 @@ transformed parameters {
 
 model {
   sigma ~ student_t(3, 0, 2.5);
-  beta_A ~ normal(0, 5);
+  beta_A ~ normal(0, sigma_beta_A);
 
   to_vector(a_site_raw) ~ std_normal();
    
