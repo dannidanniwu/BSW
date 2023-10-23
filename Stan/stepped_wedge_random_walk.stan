@@ -32,7 +32,7 @@ transformed parameters {
   vector[num_sites] beta_A_site = beta_A + tau * beta_A_site_raw; // Calculate the actual parameter using the raw parameter
 
   mu_a[1] = mu_a_raw[1];
-  //print(" mu_a[1]: ",  mu_a[1]);
+   //print(" mu_a[1]: ",  mu_a[1]);
   for (i in 2:num_basis){
     mu_a[i] =  mu_a[i-1] + mu_a_raw[i] * sigma_mu_a;
     //print(" mu_a[", i, "]: ",  mu_a[i]);
@@ -45,7 +45,8 @@ transformed parameters {
     //print("a_site[", j, "]: ",  a_site[:,j]);  
   }
   
-  
+  //print("beta_A_site: ",  beta_A_site);
+  //print("beta_0: ",  beta_0);
     
   for (i in 1:num_data) {
     Y_hat[i] = beta_0 + beta_A_site[site[i]] * A[i] + dot_product(a_site[site[i]], B[:,i]);//B[:,i] will give you a vector that consists of all elements from the ith column of that matrix.
@@ -68,7 +69,7 @@ model {
  // print("tau: ", tau);
   
   
-  beta_A_site_raw ~ normal(0, 1);
+  beta_A_site_raw ~ std_normal();
   lambda ~ student_t(3, 0, 2.5);//large lambda encourage smooth
   sigma_mu_a ~ student_t(3, 0, 1);
   
@@ -79,13 +80,16 @@ model {
     //target += -0.5 * lambda * square(a[i] - a[i-1]);//First-Order Difference
     target += -0.5 * lambda * square(mu_a[i-1] - mu_a[i] + mu_a[i+1]);
   }
+  //print("sigma_beta_A: ", sigma_beta_A);
+  //print("Before: ", sigma);
   y ~ normal(Y_hat, sigma);
+  //print("After: ", sigma);
 }
 
-generated quantities {
-  vector[num_data] y_pred_mean;
+//generated quantities {
+//  vector[num_data] y_pred_mean;
 
-  for (i in 1:num_data) {
-    y_pred_mean[i] = beta_0 + beta_A_site[site[i]] * A[i] + dot_product(a_site[site[i]], B[:,i]);
-  }
-}
+ // for (i in 1:num_data) {
+ //   y_pred_mean[i] = beta_0 + beta_A_site[site[i]] * A[i] + dot_product(a_site[site[i]], B[:,i]);
+ // }
+//}

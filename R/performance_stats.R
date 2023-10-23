@@ -33,31 +33,49 @@ power <- function(lowci){
   mean(lowci>0)*100
 }
 
-res <- res %>%filter(div <= 100)
+res <- res %>%filter(div <= 60)
 dim(res)
 # Example usage (assuming `results_agg` is properly defined before these function calls):
+truth=0
 
-freq_p = performance(2, res$est_gam_freq, res$se_gam_freq)
-round(unlist(freq_p),3)
-bayes_p_med = bayes_performance(2, res$est_med_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
-round(unlist(bayes_p_med),3)
-bayes_p_mean = bayes_performance(2, res$est_mean_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
-round(unlist(bayes_p_mean),3)
-
-freq_rdn = performance(2, res$est_gam_rdn_freq, res$se_gam_rdn_freq)
-round(unlist(freq_rdn),3)
-
-freq_sat = performance(2, res$est_sat, res$se_sat)
+freq_sat = performance(truth, res$est_sat, res$se_sat)
 round(unlist(freq_sat),3)
 
-freq_notime  = performance(2, res$est_notime , res$se_notime )
-round(unlist(freq_notime ),3)
+freq_p = performance(truth, res$est_gam_freq, res$se_gam_freq)
+round(unlist(freq_p),3)
+bayes_p_med = bayes_performance(truth, res$est_med_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
+round(unlist(bayes_p_med),3)
+bayes_p_mean = bayes_performance(truth, res$est_mean_bayes, res$lowci_bayes, res$upci_bayes,res$est_sd_bayes)
+round(unlist(bayes_p_mean),3)
 
-freq_lntime = performance(2, res$est_lntime, res$se_lntime)
+bayes_p_sd10 = bayes_performance(truth, res$est_med_bayes10, res$lowci_bayes10, res$upci_bayes10,res$est_sd_bayes10)
+round(unlist(bayes_p_sd10),3)
+
+freq_rdn = performance(truth, res$est_gam_rdn_freq, res$se_gam_rdn_freq)
+round(unlist(freq_rdn),3)
+
+freq_sat = performance(truth, res$est_sat, res$se_sat)
+round(unlist(freq_sat),3)
+
+freq_notime  = performance(truth, res$est_notime , res$se_notime )
+round(unlist(freq_notime ),truth)
+
+freq_lntime = performance(truth, res$est_lntime, res$se_lntime)
 round(unlist(freq_lntime),3)
 
+# Extract Type I error rates
+type1_errors <- c(
+  freq_sat$type1error,
+  freq_notime$type1error,
+  freq_lntime$type1error,
+  freq_p$type1error,
+  freq_rdn$type1error,
+  bayes_p_med$type1error,
+  bayes_p_sd10$type1error
+)
+round(type1_errors,3)
 
-#type 1 error rate
+#power
 
 
 
@@ -79,6 +97,18 @@ round(unlist(freq_rdn),3)
 bayes_p_med = power(res$lowci_bayes)
 round(unlist(bayes_p_med),3)
 
+bayes_p_sd10 = power(res$lowci_bayes10)
+round(unlist(bayes_p_sd10),3)
+
+power <- c(round(unlist(freq_sat),3),
+           round(unlist(freq_notime ),3),
+           round(unlist(freq_lntime),3),
+           round(unlist(freq_p),3),
+           round(unlist(freq_rdn),3),
+           round(unlist(bayes_p_med),3),
+           round(unlist(bayes_p_sd10),3)
+           )
+power
 #power
 
 

@@ -3,8 +3,8 @@ library(data.table)
 library(mgcv)
 library(lme4)
 library(splines)
-library(brms)
 library(cmdstanr)
+library(brms)
 library(slurmR)
 library(dplyr)
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
@@ -22,7 +22,7 @@ s_define <- function() {
   
   #A: trt for each cluster and time period
   #b: site-specific time period effect
-  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.01 * k^2 + ..coefA * A", variance = 1)
+  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + ..coefA * A", variance = 1)
   
   return(list(def = def, defOut = defOut)) 
 }
@@ -34,7 +34,7 @@ s_generate <- function(iter, coefA, ncluster, list_of_defs) {
   
   #--- add data generation code ---#
   ds <- genData(ncluster, def, id = "site")#site
-  ds <- addPeriods(ds, 5*ncluster+20, "site", perName = "k") #create time periods for each site;10 before/after the 1st/last switch;5 time periods a swtich
+  ds <- addPeriods(ds, ncluster+3, "site", perName = "k") #create time periods for each site
   ds <- addCorGen(
     dtOld = ds, idvar = "site", 
     rho = 0.95, corstr = "ar1",
@@ -42,7 +42,7 @@ s_generate <- function(iter, coefA, ncluster, list_of_defs) {
   )
   #assign the treatment status based on the stepped-wedge design
   #per cluster trt change per wave
-  ds <- trtStepWedge(ds, "site", nWaves = ncluster, lenWaves = 5, startPer = 10, 
+  ds <- trtStepWedge(ds, "site", nWaves = ncluster, lenWaves = 1, startPer = 2, 
                      grpName = "A", perName = "k")
   ds$site <- as.factor(ds$site)
   #30 individuals per site per period and generate each individual-level outcome
@@ -57,11 +57,11 @@ s_generate <- function(iter, coefA, ncluster, list_of_defs) {
 s_model <- function(train_data, coefA, mod) {
   set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
   # #######Fitting the GAM model with default penalization 
-  # fitsat <- lmer(y ~ A + as.factor(k) + (as.factor(k)|site), data = train_data)
-  # coef_A <- fixef(fitsat)["A"]
-  # se_A <- summary(fitsat)$coefficients["A", "Std. Error"]
-  # res_fitsat <- c(coef_A, se_A)
-  # range_sat <-   res_fitsat[1] + c(-1,1) * 1.96 *   res_fitsat[2]
+  fitsat <- lmer(y ~ A + as.factor(k) + (as.factor(k)|site), data = train_data)
+  coef_A <- fixef(fitsat)["A"]
+  se_A <- summary(fitsat)$coefficients["A", "Std. Error"]
+  res_fitsat <- c(coef_A, se_A)
+  range_sat <-   res_fitsat[1] + c(-1,1) * 1.96 *   res_fitsat[2]
   
   fitnotime <- lm(y ~ A, data = train_data)
   res_fitnotime <- c(coef(fitnotime)["A"], summary(fitnotime)$coefficients["A", "Std. Error"])
@@ -100,7 +100,7 @@ s_model <- function(train_data, coefA, mod) {
                     site = train_data$site
                     
   )
-  
+  #mod <- cmdstan_model("./stepped_wedge_random_walk.stan")
   # Fit the Bayesian model
   fit <- mod$sample(data = stan_data,
                     refresh = 0, 
@@ -166,16 +166,19 @@ s_model <- function(train_data, coefA, mod) {
                               covered_bayes,covered_bayes_sd10,
                               covered_gam_rdn_freq=(range2[1] < coefA & coefA < range2[2]),
                               covered_gam_np_freq=(range3[1] < coefA & coefA < range3[2]),
-                                                  
-                                                   est_notime = res_fitnotime[1],
-                                                   se_notime = res_fitnotime[2],
-                                                   notime_lowci = range_notime[1],
-                                                   notime_upci = range_notime[2],
-                                                   est_lntime = res_lntime[1],
-                                                   se_lntime = res_lntime[2],
-                                                   lntime_lowci = range_lntime[1],
-                                                   lntime_upci = range_lntime[2],
-                         
+                              est_sat = res_fitsat[1],
+                              se_sat = res_fitsat[2],
+                              sat_lowci = range_sat[1],
+                              sat_upci = range_sat[2],
+                              est_notime = res_fitnotime[1],
+                              se_notime = res_fitnotime[2],
+                              notime_lowci = range_notime[1],
+                              notime_upci = range_notime[2],
+                              est_lntime = res_lntime[1],
+                              se_lntime = res_lntime[2],
+                              lntime_lowci = range_lntime[1],
+                              lntime_upci = range_lntime[2],
+                              covered_sat = res_fitsat[1] < coefA & coefA < res_fitsat[2],
                               covered_notime = res_fitnotime[1] < coefA & coefA < res_fitnotime[2],
                               covered_lntime = res_lntime[1] < coefA & coefA < res_lntime[2]
                               
@@ -191,8 +194,8 @@ s_model <- function(train_data, coefA, mod) {
                             "est_gam_rdn_freq", "se_gam_rdn_freq", "lowci_freq_rdn", "upci_freq_rdn", "est_gam_np_freq", "se_gam_np_freq", 
                             "lowci_freq_np", "upci_freq_np", "covered_freq", "covered_bayes","covered_bayes10", "covered_gam_rdn_freq",
                             "covered_gam_np_freq",
-                            "est_notime", "se_notime", "notime_lowci", "notime_upci", 
-                            "est_lntime", "se_lntime", "lntime_lowci", "lntime_upci",
+                            "est_sat", "se_sat", "sat_lowci", "sat_upci", "est_notime", "se_notime", "notime_lowci", "notime_upci", 
+                            "est_lntime", "se_lntime", "lntime_lowci", "lntime_upci","covered_sat",
                             "covered_notime","covered_lntime"))
   
   model_results <- model_results%>%
@@ -217,40 +220,35 @@ s_replicate <- function(iter, coefA, ncluster, mod) {
 }
 
 scenarios = expand.grid(coefA=seq(0, 1.25, length.out = 6),ncluster=10)
-results.aggregated2 <- vector("list", length= length(scenarios))
 
-for (i in 1: dim(scenarios)[1]){
-  coefA = scenarios[i,"coefA"]
-  ncluster= scenarios[i,"ncluster"]
-  # res <- replicate(1, s_replicate(iter=1,coefA = coefA,ncluster=ncluster,
-  #                                 mod=mod
-  #                                     ))
-  
-  sjob <- Slurm_lapply(1:500,
-                 FUN=s_replicate,
-                 coefA = coefA,
-                 ncluster = ncluster,
-                 mod=mod,
-                 njobs = 90,
-                 tmp_path = "/gpfs/data/troxellab/danniw/scratch",
-                 job_name = "BS_111",
-                 sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"),
-                 export = c("s_define","s_generate","s_model","s_single_rep"),
-                 plan = "wait",
-                 overwrite=TRUE)
-  res <- Slurm_collect(sjob) # data is a list
-  #res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
-  res <- rbindlist(res) # converting list to data.table
 
-  date_stamp <- gsub("-", "", Sys.Date())
-  dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
-  save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/scenarios",i,".rda"))
-  results.aggregated2[[i]] <- res
-}
+i=3
+coefA = scenarios[i,"coefA"]
+ncluster= scenarios[i,"ncluster"]
+# res <- replicate(1, s_replicate(iter=1,coefA = coefA,ncluster=ncluster,
+#                                 mod=mod
+#                                     ))
+
+sjob <- Slurm_lapply(1:160,
+               FUN=s_replicate,
+               coefA = coefA,
+               ncluster = ncluster,
+               mod=mod,
+               njobs = 90,
+               tmp_path = "/gpfs/data/troxellab/danniw/scratch",
+               job_name = "BS_114",
+               sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"),
+               export = c("s_define","s_generate","s_model","s_single_rep"),
+               plan = "wait",
+               overwrite=TRUE)
+res <- Slurm_collect(sjob) # data is a list
+#res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
+res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date())
 dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
-save(results.aggregated2, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/all_scenarios.rda"))
+save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/scenarios",i,".rda"))
+
 
 
 

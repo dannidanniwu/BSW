@@ -31,7 +31,7 @@ ggplot(data = dSum,
        aes(x = k, y = Y, group = interaction(site, A))) +
   geom_line(aes(color = factor(A))) +
   facet_grid(startTrt~.) +
-  scale_x_continuous(breaks = seq(0, 36, by = 5), name = "week") +
+  scale_x_continuous(breaks = seq(0, 15, by = 1), name = "week") +
   scale_color_manual(values = c("#b8cce4", "#4e81ba")) +
   theme(panel.grid = element_blank(),
         legend.position = "none") 
