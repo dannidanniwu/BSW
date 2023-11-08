@@ -29,7 +29,7 @@ bayes_performance <- function(true_value, est, lowci, upci, se){
   return(list(bias = bias, rmse = rmse, est.se=est.se,coverage = bay_coverage, type1error = 100-bay_coverage))
 }
 
-power <- function(lowci){
+power_func <- function(lowci){
   mean(lowci>0)*100
 }
 
@@ -37,7 +37,10 @@ res <- res %>%filter(div <= 60)
 dim(res)
 # Example usage (assuming `results_agg` is properly defined before these function calls):
 truth=0
-
+#truth=0.25
+truth=0.75
+truth=0.5
+truth=1
 freq_sat = performance(truth, res$est_sat, res$se_sat)
 round(unlist(freq_sat),3)
 
@@ -75,29 +78,51 @@ type1_errors <- c(
 )
 round(type1_errors,3)
 
+coverage_true <- c(
+  freq_sat$coverage,
+  freq_notime$coverage,
+  freq_lntime$coverage,
+  freq_p$coverage,
+  freq_rdn$coverage,
+  bayes_p_med$coverage,
+  bayes_p_sd10$coverage
+)
+round(coverage_true,3)
+
+rmse_value <- c(
+  freq_sat$rmse,
+  freq_notime$rmse,
+  freq_lntime$rmse,
+  freq_p$rmse,
+  freq_rdn$rmse,
+  bayes_p_med$rmse,
+  bayes_p_sd10$rmse
+)
+round(rmse_value,3)
 #power
 
 
-
-freq_sat = power(res$sat_lowci)
+res <- res %>%filter(div <= 60)
+dim(res)
+freq_sat = power_func(res$sat_lowci)
 round(unlist(freq_sat),3)
 
-freq_notime  = power(res$notime_lowci)
+freq_notime  = power_func(res$notime_lowci)
 round(unlist(freq_notime ),3)
 
-freq_lntime = power(res$lntime_lowci)
+freq_lntime = power_func(res$lntime_lowci)
 round(unlist(freq_lntime),3)
 
-freq_p = power(res$lowci_freq)
+freq_p = power_func(res$lowci_freq)
 round(unlist(freq_p),3)
 
-freq_rdn = power(res$lowci_freq_rdn)
+freq_rdn = power_func(res$lowci_freq_rdn)
 round(unlist(freq_rdn),3)
 
-bayes_p_med = power(res$lowci_bayes)
+bayes_p_med = power_func(res$lowci_bayes)
 round(unlist(bayes_p_med),3)
 
-bayes_p_sd10 = power(res$lowci_bayes10)
+bayes_p_sd10 = power_func(res$lowci_bayes10)
 round(unlist(bayes_p_sd10),3)
 
 power <- c(round(unlist(freq_sat),3),
