@@ -17,3 +17,4 @@ save(res,file="C:/Users/Danni/OneDrive - NYU Langone Health/Bayesian TBI/0409202
 #save(res,file="./6y_10cov_n200_iter100_comsym.rda")
 #save(res, file = "./mixed_hier_ord_bi_3c_2b_cov_rdn_gen_v3.rda")
 save(res,file="./stepped_wedge_cluster_specific_treatment_effect_24cluster.rda")
+save(res,file="./scenarios_trt05_ncluster10.rda")

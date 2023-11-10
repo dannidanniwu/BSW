@@ -16,13 +16,13 @@ mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_random_walk
 
 s_define <- function() {
   #cluster-specific intercept
-  def <- defData(varname = "a", formula = 0, variance = 0.25)
+  def <- defData(varname = "a", formula = 0, variance = 0.16)
   def <- defData(def, varname = "mu_b", formula = 0, dist = "nonrandom")
-  def <- defData(def, varname = "s2_b", formula = 0.4, dist = "nonrandom")
-  
+  def <- defData(def, varname = "s2_b", formula = 0.04, dist = "nonrandom")
+  def <- defData(def, varname = "coefA_site", formula = "..coefA", variance = 0.01)
   #A: trt for each cluster and time period
   #b: site-specific time period effect
-  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + ..coefA * A", variance = 1)
+  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.005 * k^2 + coefA_site * A", variance = 0.09)
   
   return(list(def = def, defOut = defOut)) 
 }
@@ -34,7 +34,7 @@ s_generate <- function(iter, coefA, ncluster, list_of_defs) {
   
   #--- add data generation code ---#
   ds <- genData(ncluster, def, id = "site")#site
-  ds <- addPeriods(ds, ncluster+3, "site", perName = "k") #create time periods for each site
+  ds <- addPeriods(ds, ncluster+6, "site", perName = "k") #create time periods for each site
   ds <- addCorGen(
     dtOld = ds, idvar = "site", 
     rho = 0.95, corstr = "ar1",
@@ -222,7 +222,7 @@ s_replicate <- function(iter, coefA, ncluster, mod) {
 scenarios = expand.grid(coefA=seq(0, 1.25, length.out = 6),ncluster=10)
 
 
-i=6
+i=1
 coefA = scenarios[i,"coefA"]
 ncluster= scenarios[i,"ncluster"]
 # res <- replicate(1, s_replicate(iter=1,coefA = coefA,ncluster=ncluster,
@@ -236,7 +236,7 @@ sjob <- Slurm_lapply(1:160,
                mod=mod,
                njobs = 90,
                tmp_path = "/gpfs/data/troxellab/danniw/scratch",
-               job_name = "BS_117",
+               job_name = "BS_119",
                sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"),
                export = c("s_define","s_generate","s_model","s_single_rep"),
                plan = "wait",
@@ -249,6 +249,7 @@ date_stamp <- gsub("-", "", Sys.Date())
 dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
 save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/scenarios",i,".rda"))
 
+#result <- cbind(res)
 
 
 

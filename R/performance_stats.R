@@ -37,7 +37,7 @@ res <- res %>%filter(div <= 60)
 dim(res)
 # Example usage (assuming `results_agg` is properly defined before these function calls):
 truth=0
-#truth=0.25
+truth=0.25
 truth=0.75
 truth=0.5
 truth=1
@@ -65,6 +65,19 @@ round(unlist(freq_notime ),truth)
 
 freq_lntime = performance(truth, res$est_lntime, res$se_lntime)
 round(unlist(freq_lntime),3)
+
+
+#bias
+bias_compare <- c(
+  freq_sat$bias,
+  freq_notime$bias,
+  freq_lntime$bias,
+  freq_p$bias,
+  freq_rdn$bias,
+  bayes_p_med$bias,
+  bayes_p_sd10$bias
+)
+round(bias_compare,3)
 
 # Extract Type I error rates
 type1_errors <- c(
