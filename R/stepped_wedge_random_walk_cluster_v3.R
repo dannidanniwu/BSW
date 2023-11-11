@@ -12,17 +12,17 @@ library(dplyr)
 set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0") 
 # Compile the Stan model
 #mod <- cmdstan_model("./stepped_wedge_random_walk.stan")
-mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_random_walk.stan")
+mod <- cmdstan_model("/gpfs/home/dw2625/r/BS/stepped_wedge_random_walk.stan")
 
 s_define <- function() {
   #cluster-specific intercept
-  def <- defData(varname = "a", formula = 0, variance = 0.16)
+  def <- defData(varname = "a", formula = 0, variance = 0.25)
   def <- defData(def, varname = "mu_b", formula = 0, dist = "nonrandom")
-  def <- defData(def, varname = "s2_b", formula = 0.04, dist = "nonrandom")
+  def <- defData(def, varname = "s2_b", formula = 0.36, dist = "nonrandom")
   def <- defData(def, varname = "coefA_site", formula = "..coefA", variance = 0.01)
   #A: trt for each cluster and time period
   #b: site-specific time period effect
-  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.005 * k^2 + coefA_site * A", variance = 0.09)
+  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.01 * k^2 + coefA_site * A", variance = 1)
   
   return(list(def = def, defOut = defOut)) 
 }
@@ -144,6 +144,34 @@ s_model <- function(train_data, coefA, mod) {
   bayes_gam_sd10 =bayes_gam_sd10[,-1]
   covered_bayes_sd10 =   (bayes_gam_sd10$`2.5%`< coefA & coefA < bayes_gam_sd10$`97.5%`)
   
+  stan_data_sd1 <- list(num_data = nrow(train_data),
+                         num_basis = ncol(B_train),
+                         B = t(B_train),
+                         A = train_data$A,
+                         y = train_data$y,
+                         num_sites = length(unique(train_data$site)),
+                         sigma_beta_A = 1,
+                         site = train_data$site
+                         
+  )
+  
+  fit_sd1 <- mod$sample(data = stan_data,
+                         refresh = 0, 
+                         iter_warmup = 500,
+                         iter_sampling = 2000,
+                         show_messages = TRUE) 
+  
+  diagnostics_df_sd1 <- as_draws_df(fit_sd1$sampler_diagnostics())
+  div_sd1 <- sum(diagnostics_df_sd1[, 'divergent__'])
+  bayes_gam_sd1 = fit_sd1$summary(variables="beta_A",
+                                    posterior::default_summary_measures()[1:3],
+                                    quantiles = ~ quantile(., probs = c(0.025, 0.975)),
+                                    posterior::default_convergence_measures())
+  
+  bayes_gam_sd1 =bayes_gam_sd1[,-1]
+  covered_bayes_sd1 =   (bayes_gam_sd1$`2.5%`< coefA & coefA < bayes_gam_sd1$`97.5%`)
+  
+  
   #Fit a frequentist linear model with the same basis as the Bayesian model, but no penalization
   # Incorporating the B-spline basis into the data
   ds_with_bspline <- cbind(train_data,  B_train)
@@ -157,7 +185,8 @@ s_model <- function(train_data, coefA, mod) {
   
   model_results <- data.table(est_gam_freq= res_fitgam[1], se_gam_freq=res_fitgam[2], 
                               gam_lowci=range[1], gam_upci=range[2], bayes_gam,div, bayes_gam_sd10,
-                              div_sd10,
+                              div_sd10,bayes_gam_sd1,
+                              div_sd1,
                               est_gam_freq_rdn = res_fitgam2[1], se_gam_freq_rdn=res_fitgam2[2], 
                               gam_rdn_lowci=range2[1], gam_rdn_upci=range2[2],
                               est_gam_freq_np = res_fitgam3[1], se_gam_freq_np=res_fitgam3[2], 
@@ -191,6 +220,11 @@ s_model <- function(train_data, coefA, mod) {
                             "lowci_bayes10",
                             "upci_bayes10","rhat_bayes10","ess_bulk_bayes10","ess_tail_bayes10",
                             "div_bayes10",
+                            "est_mean_bayes1",
+                            "est_med_bayes1","est_sd_bayes1",
+                            "lowci_bayes1",
+                            "upci_bayes1","rhat_bayes1","ess_bulk_bayes1","ess_tail_bayes1",
+                            "div_bayes1",
                             "est_gam_rdn_freq", "se_gam_rdn_freq", "lowci_freq_rdn", "upci_freq_rdn", "est_gam_np_freq", "se_gam_np_freq", 
                             "lowci_freq_np", "upci_freq_np", "covered_freq", "covered_bayes","covered_bayes10", "covered_gam_rdn_freq",
                             "covered_gam_np_freq",
@@ -235,8 +269,8 @@ sjob <- Slurm_lapply(1:160,
                ncluster = ncluster,
                mod=mod,
                njobs = 90,
-               tmp_path = "/gpfs/data/troxellab/danniw/scratch",
-               job_name = "BS_119",
+               tmp_path = "/gpfs/scratch/dw2625",
+               job_name = "BS_130",
                sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "8G"),
                export = c("s_define","s_generate","s_model","s_single_rep"),
                plan = "wait",
@@ -246,8 +280,8 @@ res <- Slurm_collect(sjob) # data is a list
 res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date())
-dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/scenarios",i,".rda"))
+dir.create(file.path("/gpfs/home/dw2625/r/BS/", date_stamp), showWarnings = FALSE)
+save(res, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/scenarios",i,".rda"))
 
 #result <- cbind(res)
 
