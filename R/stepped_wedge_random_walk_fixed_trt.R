@@ -185,7 +185,7 @@ s_model <- function(train_data, coefA, mod) {
               
           
                               covered_gam_freq=(range[1] < coefA & coefA < range[2]),
-                              covered_bayes,covered_bayes_sd2_5,
+                              covered_bayes,covered_bayes_sd2_5,covered_bayes_sd1,
                        
                               est_sat = res_fitsat[1],
                               se_sat = res_fitsat[2],
@@ -217,15 +217,14 @@ s_model <- function(train_data, coefA, mod) {
                             "lowci_bayes1",
                             "upci_bayes1","rhat_bayes1","ess_bulk_bayes1","ess_tail_bayes1",
                             "div_bayes1",
-                       
-                            "lowci_freq_np", "upci_freq_np", "covered_freq", "covered_bayes","covered_bayes2_5", 
+                             "covered_freq", "covered_bayes","covered_bayes2_5", "covered_bayes_sd1",
                           
                             "est_sat", "se_sat", "sat_lowci", "sat_upci", "est_notime", "se_notime", "notime_lowci", "notime_upci", 
                             "est_lntime", "se_lntime", "lntime_lowci", "lntime_upci","covered_sat",
                             "covered_notime","covered_lntime"))
   
   model_results <- model_results%>%
-    mutate(across(-c(variable,covered_freq, covered_bayes,covered_bayes10), round, 3))
+    mutate(across(-c(variable,covered_freq, covered_bayes,covered_bayes2_5), round, 3))
   
   return(model_results)
 }
@@ -245,7 +244,7 @@ s_replicate <- function(iter, coefA, ncluster, mod) {
   return(data.table(iter=iter, coefA = coefA , ncluster=ncluster, model_results))
 }
 
-scenarios = expand.grid(coefA=seq(0, 1, length.out = 5),ncluster=10)
+#scenarios = expand.grid(coefA=seq(0, 1, length.out = 5),ncluster=10)
 
 
 i=5
@@ -273,9 +272,10 @@ res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date())
 dir.create(file.path("/gpfs/home/dw2625/r/BS/", date_stamp), showWarnings = FALSE)
-save(res, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/scenarios_coefA",coefA,"ncluster",ncluster,".rda"))
+save(res, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/scenarios_fixed_coefA",coefA,"ncluster",ncluster,".rda"))
 
 #result <- cbind(res)
 
+#save(res, file = paste0("./scenarios_fixed_coefA",coefA,"ncluster",ncluster,".rda"))
 
 
