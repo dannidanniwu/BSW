@@ -11,13 +11,13 @@ data {
 }
 
 parameters {
-  real<lower=0> sigma;
-  real<lower=0> sigma_a;          // variance for site-level spline coefficients
+  real<lower=1e-3> sigma;
+  real<lower=1e-3> sigma_a;          // variance for site-level spline coefficients
   vector[num_basis] mu_a_raw;         // global mean for spline coefficients
   real beta_A;
   real  beta_0;
-  real<lower=0> lambda;
-  real<lower=0> sigma_mu_a; // scale for the a coefficients
+  real<lower=1e-3> lambda;
+  real<lower=1e-3> sigma_mu_a; // scale for the a coefficients
   matrix[num_sites, num_basis] a_site_raw;
 }
 
@@ -65,10 +65,8 @@ model {
   
   
   lambda ~ student_t(3, 0, 2.5);//large lambda encourage smooth
-  sigma_mu_a ~ student_t(3, 0, 1);
-  
- 
-  mu_a_raw ~ std_normal();
+  sigma_mu_a ~ std_normal();
+
   
   for (i in 2: (num_basis-1)) {
     //target += -0.5 * lambda * square(a[i] - a[i-1]);//First-Order Difference
@@ -79,7 +77,6 @@ model {
   y ~ normal(Y_hat, sigma);
   //print("After: ", sigma);
 }
-
 //generated quantities {
 //  vector[num_data] y_pred_mean;
 
