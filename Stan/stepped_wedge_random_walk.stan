@@ -71,10 +71,7 @@ model {
   
   beta_A_site_raw ~ std_normal();
   lambda ~ student_t(3, 0, 2.5);//large lambda encourage smooth
-  sigma_mu_a ~ student_t(3, 0, 1);
-  
- 
-  mu_a_raw ~ std_normal();
+  sigma_mu_a ~ std_normal();
   
   for (i in 2: (num_basis-1)) {
     //target += -0.5 * lambda * square(a[i] - a[i-1]);//First-Order Difference
@@ -85,7 +82,6 @@ model {
   y ~ normal(Y_hat, sigma);
   //print("After: ", sigma);
 }
-
 //generated quantities {
 //  vector[num_data] y_pred_mean;
 
