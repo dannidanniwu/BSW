@@ -247,7 +247,7 @@ s_replicate <- function(iter, coefA, ncluster, mod) {
 scenarios = expand.grid(coefA=seq(0, 5, length.out = 6),ncluster=10)
 
 
-i=6
+i=5
 coefA = scenarios[i,"coefA"]
 ncluster= scenarios[i,"ncluster"]
 # res <- replicate(1, s_replicate(iter=1,coefA = coefA,ncluster=ncluster,
@@ -259,9 +259,9 @@ sjob <- Slurm_lapply(1:160,
                coefA = coefA,
                ncluster = ncluster,
                mod=mod,
-               njobs = 80,
+               njobs = 50,
                tmp_path = "/gpfs/scratch/dw2625",
-               job_name = "BS_132",
+               job_name = "BS_133",
                sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "10G"),
                export = c("s_define","s_generate","s_model","s_single_rep"),
                plan = "wait",
@@ -272,7 +272,7 @@ res <- rbindlist(res) # converting list to data.table
 
 date_stamp <- gsub("-", "", Sys.Date())
 dir.create(file.path("/gpfs/home/dw2625/r/BS/", date_stamp), showWarnings = FALSE)
-save(res, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/scenarios_fixed_coefA",coefA,"ncluster",ncluster,".rda"))
+save(res, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/scenarios_fixedtrt",coefA,"ncluster",ncluster,".rda"))
 
 #result <- cbind(res)
 
