@@ -22,7 +22,7 @@ s_define <- function() {
   def <- defData(def, varname = "s2_b", formula = 0.36, dist = "nonrandom")
   #A: trt for each cluster and time period
   #b: site-specific time period effect
-  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.01 * k^2 + ..coefA * A", variance = 1)
+  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + ..coefA * A", variance = 1)
   
   return(list(def = def, defOut = defOut)) 
 }
@@ -79,7 +79,7 @@ s_model <- function(train_data, coefA, mod) {
   range <-   res_fitgam[1] + c(-1,1) * 1.96 *   res_fitgam[2]
   
   # Define the knots based on the training data
-  knots_train <- quantile(train_data$k, probs=seq(0, 1, length=9)[-c(1, 6)])
+  knots_train <- quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])
   
   B_train <- predict(splines::bs(train_data$k, degree=3, knots=quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])))
   colnames(B_train) <- paste0("Bspline_", 1:ncol(B_train))
@@ -244,10 +244,10 @@ s_replicate <- function(iter, coefA, ncluster, mod) {
   return(data.table(iter=iter, coefA = coefA , ncluster=ncluster, model_results))
 }
 
-#scenarios = expand.grid(coefA=seq(0, 1, length.out = 5),ncluster=10)
+scenarios = expand.grid(coefA=seq(0, 5, length.out = 6),ncluster=10)
 
 
-i=5
+i=6
 coefA = scenarios[i,"coefA"]
 ncluster= scenarios[i,"ncluster"]
 # res <- replicate(1, s_replicate(iter=1,coefA = coefA,ncluster=ncluster,
@@ -261,7 +261,7 @@ sjob <- Slurm_lapply(1:160,
                mod=mod,
                njobs = 80,
                tmp_path = "/gpfs/scratch/dw2625",
-               job_name = "BS_131",
+               job_name = "BS_132",
                sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "10G"),
                export = c("s_define","s_generate","s_model","s_single_rep"),
                plan = "wait",
