@@ -5,8 +5,9 @@ library(lme4)
 library(splines)
 library(cmdstanr)
 library(brms)
-library(slurmR)
+library(parallel)
 library(dplyr)
+library(slurmR)
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
 set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0") 
@@ -101,6 +102,7 @@ s_model <- function(train_data, coefA, mod) {
                     refresh = 0, 
                     iter_warmup = 500,
                     iter_sampling = 2000,
+                    cores = 4,
                     show_messages = TRUE) 
   
   diagnostics_df <- as_draws_df(fit$sampler_diagnostics())
@@ -112,42 +114,14 @@ s_model <- function(train_data, coefA, mod) {
   
   covered_bayes =   (bayes_gam$`2.5%`< coefA & coefA < bayes_gam$`97.5%`)
   
-  stan_data_sd2_5 <- list(num_data = nrow(train_data),
-                    num_basis = ncol(B_train),
-                    B = t(B_train),
-                    A = train_data$A,
-                    y = train_data$y,
-                    num_sites = length(unique(train_data$site)),
-                    sigma_beta_A = 2.5,
-                    site = train_data$site
-                    
-  )
-  
-  fit_sd2_5 <- mod$sample(data = stan_data,
-                    refresh = 0, 
-                    iter_warmup = 500,
-                    iter_sampling = 2000,
-                    show_messages = TRUE) 
-  
-  diagnostics_df_sd2_5 <- as_draws_df(fit_sd2_5$sampler_diagnostics())
-  div_sd2_5 <- sum(diagnostics_df_sd2_5[, 'divergent__'])
-  bayes_gam_sd2_5 = fit_sd2_5$summary(variables="beta_A",
-                          posterior::default_summary_measures()[1:3],
-                          quantiles = ~ quantile(., probs = c(0.025, 0.975)),
-                          posterior::default_convergence_measures())
-  
-  bayes_gam_sd2_5 =bayes_gam_sd2_5[,-1]
-  covered_bayes_sd2_5 =   (bayes_gam_sd2_5$`2.5%`< coefA & coefA < bayes_gam_sd2_5$`97.5%`)
-  
   
   
   model_results <- data.table(est_gam_freq= res_fitgam[1], se_gam_freq=res_fitgam[2], 
-                              gam_lowci=range[1], gam_upci=range[2], bayes_gam,div, bayes_gam_sd2_5,
-                              div_sd2_5,
+                              gam_lowci=range[1], gam_upci=range[2], bayes_gam,div, 
               
           
                               covered_gam_freq=(range[1] < coefA & coefA < range[2]),
-                              covered_bayes,covered_bayes_sd2_5,covered_bayes_sd1,
+                              covered_bayes,
                        
                               est_sat = res_fitsat[1],
                               se_sat = res_fitsat[2],
@@ -169,20 +143,16 @@ s_model <- function(train_data, coefA, mod) {
   
   setnames(model_results, c("est_gam_freq", "se_gam_freq", "lowci_freq", "upci_freq", "variable", "est_mean_bayes",
                             "est_med_bayes", "est_sd_bayes", "lowci_bayes", "upci_bayes", "rhat", "ess_bulk", "ess_tail", "div", 
-                            "est_mean_bayes2_5",
-                            "est_med_bayes2_5","est_sd_bayes2_5",
-                            "lowci_bayes2_5",
-                            "upci_bayes2_5","rhat_bayes2_5","ess_bulk_bayes2_5","ess_tail_bayes2_5",
-                            "div_bayes2_5",
+              
                            
-                             "covered_freq", "covered_bayes","covered_bayes2_5", 
+                             "covered_freq", "covered_bayes",
                           
                             "est_sat", "se_sat", "sat_lowci", "sat_upci", "est_notime", "se_notime", "notime_lowci", "notime_upci", 
                             "est_lntime", "se_lntime", "lntime_lowci", "lntime_upci","covered_sat",
                             "covered_notime","covered_lntime"))
   
   model_results <- model_results%>%
-    mutate(across(-c(variable,covered_freq, covered_bayes,covered_bayes2_5), round, 3))
+    mutate(across(-c(variable,covered_freq, covered_bayes), round, 3))
   
   return(model_results)
 }
@@ -203,35 +173,41 @@ s_replicate <- function(iter, coefA, ncluster, mod) {
 }
 
 scenarios = expand.grid(coefA=seq(0, 5, length.out = 6),ncluster=10)
+nsim=150
 
-
-i=5
-coefA = scenarios[i,"coefA"]
-ncluster= scenarios[i,"ncluster"]
-# res <- replicate(1, s_replicate(iter=1,coefA = coefA,ncluster=ncluster,
-#                                 mod=mod
-#                                     ))
-
-sjob <- Slurm_lapply(1:120,
-               FUN=s_replicate,
-               coefA = coefA,
-               ncluster = ncluster,
-               mod=mod,
-               njobs = 30,
-               tmp_path = "/gpfs/scratch/dw2625",
-               job_name = "BS_134",
-               sbatch_opt = list(time = "4:00:00",partition = "cpu_dev", `mem-per-cpu` = "10G"),
-               export = c("s_define","s_generate","s_model","s_single_rep"),
-               plan = "wait",
-               overwrite=TRUE)
-res <- Slurm_collect(sjob) # data is a list
-#res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
-res <- rbindlist(res) # converting list to data.table
-
-date_stamp <- gsub("-", "", Sys.Date())
-dir.create(file.path("/gpfs/home/dw2625/r/BS/", date_stamp), showWarnings = FALSE)
-save(res, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/scenarios_fixedtrt",coefA,"ncluster",ncluster,".rda"))
-
+for (i in  1: 4){
+  coefA = scenarios[i,"coefA"]
+  ncluster= scenarios[i,"ncluster"]
+  # res <- replicate(1, s_replicate(iter=1,coefA = coefA,ncluster=ncluster,
+  #                                 mod=mod
+  #                                     ))
+  
+  # res <- parallel::mclapply(
+  #   X = 1 : nsim, 
+  #   FUN = function(x) s_replicate(iter=x,coefA = coefA,ncluster=ncluster,
+  #                                 mod=mod),
+  #   mc.cores = 4)
+  
+  sjob <- Slurm_lapply(1:nsim,
+                 FUN=s_replicate,
+                 coefA = coefA,
+                 ncluster = ncluster,
+                 mod=mod,
+                 njobs = 20,
+                 tmp_path = "/gpfs/scratch/dw2625",
+                 job_name = "BS_134",
+                 sbatch_opt = list(time = "12:00:00",partition = "cpu_short", `mem-per-cpu` = "10G"),
+                 export = c("s_define","s_generate","s_model","s_single_rep"),
+                 plan = "wait",
+                 overwrite=TRUE)
+  res <- Slurm_collect(sjob) # data is a list
+  #res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
+  res <- rbindlist(res) # converting list to data.table
+  
+  date_stamp <- gsub("-", "", Sys.Date())
+  dir.create(file.path("/gpfs/home/dw2625/r/BS/", date_stamp), showWarnings = FALSE)
+  save(res, file = paste0("/gpfs/home/dw2625/r/BS/", date_stamp, "/scenarios_fixedtrt",coefA,"ncluster",ncluster,".rda"))
+}
 #result <- cbind(res)
 
 #save(res, file = paste0("./scenarios_fixed_coefA",coefA,"ncluster",ncluster,".rda"))
