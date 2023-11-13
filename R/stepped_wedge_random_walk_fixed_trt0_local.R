@@ -174,7 +174,7 @@ s_replicate <- function(iter, coefA, ncluster, mod) {
 scenarios = expand.grid(coefA=seq(0, 5, length.out = 6),ncluster=10)
 
 
-i=3
+i=1
 nsim=150
 coefA = scenarios[i,"coefA"]
 ncluster= scenarios[i,"ncluster"]
