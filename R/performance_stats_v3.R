@@ -32,7 +32,7 @@ bayes_performance <- function(true_value, est, lowci, upci, se){
 power_func <- function(lowci){
   mean(lowci>0)*100
 }
-
+res <- data.table::rbindlist(res)
 res <- res %>%filter(div<=80)
 
 dim(res)
@@ -44,6 +44,8 @@ truth=0.5
 truth=1
 truth=5
 truth=4
+truth=3
+truth=2
 freq_sat = performance(truth, res$est_sat, res$se_sat)
 round(unlist(freq_sat),3)
 
