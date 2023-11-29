@@ -5,9 +5,7 @@ library(lme4)
 library(splines)
 library(cmdstanr)
 library(brms)
-library(parallel)
 library(dplyr)
-library(slurmR)
 library(loo)
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
@@ -21,8 +19,9 @@ mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/time_vary_cluster_specifi
 #   b + a / (1 + exp(k * (x-x0)))
 # }
 
-s_define <- function() {
-  #cluster-specific intercept
+s_generate <- function(iter,  ncluster) {
+  
+  set.seed(iter)
   def <- defData(varname = "a", formula = 0, variance = 0.25)
   def <- defData(def, varname = "rdn", formula = 0, variance = 0.04)
   def <- defData(def, varname = "mu_b", formula = 0, dist = "nonrandom")
@@ -34,14 +33,14 @@ s_define <- function() {
   
   # Modify the treatment effect to increase, plateau, then decrease
   defteffect <- defCondition(
-                             condition = "t == 0",  
-                             formula = "0", 
-                             dist = "nonrandom")
+    condition = "t == 0",  
+    formula = "0", 
+    dist = "nonrandom")
   
   defteffect <- defCondition(defteffect,
-    condition = "t < 5 & t>0",  
-    formula = "5 / (1 + exp(-5 * (t-1)))", 
-    dist = "nonrandom")
+                             condition = "t < 5 & t>0",  
+                             formula = "5 / (1 + exp(-5 * (t-1)))", 
+                             dist = "nonrandom")
   
   defteffect <- defCondition(defteffect,
                              condition = " t>=5",  
@@ -49,20 +48,13 @@ s_define <- function() {
                              dist = "nonrandom")
   
   defteffect_rdn <- defDataAdd(varname = "t_effect", 
-                       formula = "exp(rdn)*t_effect_overall", 
-                       dist= "nonrandom")
+                               formula = "exp(rdn)*t_effect_overall", 
+                               dist= "nonrandom")
   
   # Modify the outcome variable formula
   defOut <- defDataAdd(varname = "y", 
                        formula = "a + b - 0.05 * k^2 + t_effect * A", 
                        variance = 1)
-  return(list(def = def, deft=deft, defteffect=defteffect, defOut = defOut)) 
-}
-
-s_generate <- function(iter,  ncluster, list_of_defs) {
-  
-  set.seed(iter)
-  list2env(list_of_defs, envir = environment())
   
   #--- add data generation code ---#
   ds <- genData(ncluster, def, id = "site")#site
@@ -179,9 +171,9 @@ s_model <- function(train_data, mod) {
   
 }
 
-s_single_rep <- function(iter, ncluster, list_of_defs, mod) {
+s_single_rep <- function(iter, ncluster, mod) {
   
-  train_data <- s_generate(iter, ncluster, list_of_defs)
+  train_data <- s_generate(iter, ncluster)
   
   model_results <- s_model(train_data, mod)
   
@@ -189,20 +181,22 @@ s_single_rep <- function(iter, ncluster, list_of_defs, mod) {
 }
 
 s_replicate <- function(iter, ncluster, mod) {
-  list_of_defs = s_define()
-  model_results = s_single_rep(iter, ncluster,list_of_defs, mod)
+  model_results = s_single_rep(iter, ncluster,mod)
   return(data.table(iter=iter, ncluster=ncluster, model_results))
 }
 
 
 scenarios = expand.grid(ncluster=10)
 i=1
-nsim=150
+#nsim=150
 ncluster= scenarios[i,"ncluster"]
 # res <- replicate(1, s_replicate(iter=1,ncluster=ncluster,
 #                                 mod=mod
 #                                     ))
 # # 
+args <- commandArgs(trailingOnly = TRUE)
+iter <- as.numeric(args[1])  # Get the iteration number from the job array index
+
 # res <- parallel::mclapply(
 #   X = 1 : nsim,
 #   FUN = function(x) s_replicate(iter=x,coefA = coefA,ncluster=ncluster,
@@ -210,27 +204,33 @@ ncluster= scenarios[i,"ncluster"]
 #   mc.cores = 4)
 
 
+result <- s_replicate(iter=iter,  ncluster=ncluster, mod=mod)
 
 
-sjob <- Slurm_lapply(1:nsim,
-                     FUN=s_replicate,
-                     
-                     ncluster = ncluster,
-                     mod=mod,
-                     njobs = 45,
-                     tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
-                     job_name = "BS_165",
-                     sbatch_opt = list(time = "48:00:00",partition = "cpu_short", `mem-per-cpu` = "10G"),
-                     export = c("s_define","s_generate","s_model","s_single_rep"),
-                     plan = "wait",
-                     overwrite=TRUE)
-res <- Slurm_collect(sjob) # data is a list
-#res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
-res <- rbindlist(res) # converting list to data.table
+# sjob <- Slurm_lapply(1:nsim,
+#                      FUN=s_replicate,
+#                      
+#                      ncluster = ncluster,
+#                      mod=mod,
+#                      njobs = 45,
+#                      tmp_path = "/gpfs/data/troxellab/danniw/scratch", 
+#                      job_name = "BS_165",
+#                      sbatch_opt = list(time = "48:00:00",partition = "cpu_short", `mem-per-cpu` = "10G"),
+#                      export = c("s_define","s_generate","s_model","s_single_rep"),
+#                      plan = "wait",
+#                      overwrite=TRUE)
+# res <- Slurm_collect(sjob) # data is a list
+# #res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
+# res <- rbindlist(res) # converting list to data.table
 
-date_stamp <- gsub("-", "", Sys.Date())
-dir.create(file.path("/gpfs/data/troxellab/danniw/r/BS/", date_stamp), showWarnings = FALSE)
-save(res, file = paste0("/gpfs/data/troxellab/danniw/r/BS/", date_stamp, "/m1_cluster_specific_time_vary_trt.rda"))
+#date_stamp <- gsub("-", "", Sys.Date())
+dir.create(file.path("/gpfs/data/troxellab/danniw/scratch/m1_cluster_specific_time_vary_trt"), showWarnings = FALSE)
+
+# Write the result to a file
+output_filename <- paste0("output_iter_", iter, ".RData")
+#save(result, file=output_filename)
+
+save(result, file = paste0("/gpfs/data/troxellab/danniw/scratch/m1_cluster_specific_time_vary_trt/", output_filename))
 
 #result <- cbind(res)
 
