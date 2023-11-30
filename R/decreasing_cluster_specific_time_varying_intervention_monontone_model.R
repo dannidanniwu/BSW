@@ -13,7 +13,7 @@ set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
 # Compile the Stan model
 #mod <- cmdstan_model("./stepped_wedge_random_walk_prior_test.stan")
 #mod <- cmdstan_model("./time_vary_cluster_specific_trt.stan")
-mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/time_vary_cluster_specific_trt.stan")
+mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/monotone_cluster_specific_time_vary_trt.stan")
 
 # logistic <- function(a, x, x0, k,b) {
 #   b + a / (1 + exp(k * (x-x0)))
@@ -96,29 +96,21 @@ s_model <- function(train_data, mod) {
   
   B_train <- predict(splines::bs(train_data$k, degree=3, knots=quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])))
   
-  knots_t <- quantile(train_data$t, probs=seq(0, 1, length=6)[-c(1, 6)])
   
-  B_t <- predict(splines::bs(train_data$t, degree=3, knots=quantile(train_data$t, probs=seq(0, 1, length=6)[-c(1, 6)])))
-  #unique(B_t)
-  # Compute the B-spline basis for the test set using the same knots from the training data
-  B_test_t <- predict(splines::bs(c(0: t_ex_mx), degree=3, knots=knots_t))[-1,]#-1:remove t=0
-  
-  
-  stan_data <- list(num_data = nrow(train_data),
-                    num_basis = ncol(B_train),
-                    num_t_ex = nrow(B_test_t),
-                    B = t(B_train),
-                    B_t = t(B_t),
-                    B_test_t=t(B_test_t),
-                    A = train_data$A,
-                    y = train_data$y,
-                    num_sites = length(unique(train_data$site)),
-                    sigma_beta_A = 5,
-                    site = train_data$site
-                    
+  monot_data <- list(num_data = nrow(train_data),
+                     num_basis = ncol(B_train),
+                     num_t_ex= t_ex_mx,
+                     t_ex = train_data$t,
+                     B = t(B_train),
+                     c=rep(1,t_ex_mx),
+                     A = train_data$A,
+                     y = train_data$y,
+                     num_sites = length(unique(train_data$site)),
+                     site = train_data$site
+                     
   )
   # Fit the Bayesian model
-  fit <- mod$sample(data = stan_data,
+  fit <- mod$sample(data = monot_data,
                     refresh = 0, 
                     iter_warmup = 500,
                     iter_sampling = 2000,
@@ -135,7 +127,7 @@ s_model <- function(train_data, mod) {
   covered_bayes_tate =   (bayes_tate$`2.5%`<   true_tate  &   true_tate  < bayes_tate$`97.5%`)
   
   #LTE from Bayesian model
-  bayes_lte = fit$summary(variables="phi_max",
+  bayes_lte = fit$summary(variables="delta",
                           posterior::default_summary_measures()[1:3],
                           quantiles = ~ quantile(., probs = c(0.025, 0.975)),
                           posterior::default_convergence_measures())
@@ -155,17 +147,8 @@ s_model <- function(train_data, mod) {
   )
   
   
-  ############GAM estimation
-  #The model includes the smooth for t only when A=1
-  fitgam <- mgcv::bam(y ~ s(t, by=A) + s(t, by=A, site, bs = "fs") +  s(k) + s(k, site, bs = "fs"), data = train_data, method="fREML")
-  newdata <- data.frame(t = t_values, A = 1,k=1,site=1)
-  predictions <- predict(fitgam, newdata, type = "terms")
-  smooth_t_values <- predictions[,"s(t):A"]
-  gam_tate <- mean(smooth_t_values)
-  gam_lte <- smooth_t_values[t_ex_mx]
-  
   model_results <- data.table(true_tate,true_lte,bayes_tate,bayes_lte,covered_bayes_tate,covered_bayes_lte,
-                              gam_tate,gam_lte,div,num_max_tree_depth, loo_data)
+                              div,num_max_tree_depth, loo_data)
   return(model_results)
   
   
@@ -224,16 +207,15 @@ result <- s_replicate(iter=iter,  ncluster=ncluster, mod=mod)
 # res <- rbindlist(res) # converting list to data.table
 
 #date_stamp <- gsub("-", "", Sys.Date())
-dir.create(file.path("/gpfs/data/troxellab/danniw/scratch/m1_cluster_specific_time_vary_trt"), showWarnings = FALSE)
+dir.create(file.path("/gpfs/data/troxellab/danniw/scratch/monot_cluster_specific_time_vary_trt"), showWarnings = FALSE)
 
 # Write the result to a file
 output_filename <- paste0("output_iter_", iter, ".RData")
 #save(result, file=output_filename)
 
-save(result, file = paste0("/gpfs/data/troxellab/danniw/scratch/m1_cluster_specific_time_vary_trt/", output_filename))
+save(result, file = paste0("/gpfs/data/troxellab/danniw/scratch/monot_cluster_specific_time_vary_trt/", output_filename))
 
 #result <- cbind(res)
 
 #save(res, file = paste0("./scenarios_fixed_coefA",coefA,"ncluster",ncluster,".rda"))
-
 
