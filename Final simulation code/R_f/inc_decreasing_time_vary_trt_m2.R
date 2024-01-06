@@ -7,20 +7,21 @@ library(cmdstanr)
 library(brms)
 library(dplyr)
 library(loo)
-
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
 set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0") 
 # Compile the Stan model
 #mod <- cmdstan_model("./stepped_wedge_random_walk_prior_test.stan")
 #mod <- cmdstan_model("./stepped_wedge_time_vary_trt.stan")
-mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_time_vary_trt_m2_nopen.stan")
+mod <- cmdstan_model("/gpfs/data/troxellab/danniw/r/BS/stepped_wedge_time_vary_trt_m2.stan")
 
+# logistic <- function(a, x, x0, k,b) {
+#   b + a / (1 + exp(k * (x-x0)))
+# }
 
-s_generate <- function(iter, coefA, ncluster) {
+s_generate <- function(iter,  ncluster) {
   
   set.seed(iter)
-  
   def <- defData(varname = "a", formula = 0, variance = 0.25)
   def <- defData(def, varname = "mu_b", formula = 0, dist = "nonrandom")
   def <- defData(def, varname = "s2_b", formula = 0.36, dist = "nonrandom")
@@ -29,14 +30,32 @@ s_generate <- function(iter, coefA, ncluster) {
   #t:exposure time
   deft <- defDataAdd(varname = "t", formula = "max(k-startTrt,0) ", dist= "nonrandom")
   
-  defteffect <- defDataAdd(varname = "t_effect", formula = " (0 * (t == 0) +(t!=0)*(..coefA * 1 / (1 + 2*exp(-t))))", dist = "nonrandom")
+  # Modify the treatment effect to increase, plateau, then decrease
   
-  defOut <- defDataAdd(varname = "y", formula = " a + b - 0.05 * k^2 + (0 * (t == 0) +(t != 0)*(..coefA * 1 / (1 + 2*exp(-t))))*A", variance = 1)
+  defteffect <- defCondition(
+    condition = "t == 0",  
+    formula = "0", 
+    dist = "nonrandom")
   
+  defteffect <- defCondition(defteffect,
+                             condition = "t < 5 & t>0",  
+                             formula = "5 / (1 + exp(-5 * (t-1)))", 
+                             dist = "nonrandom")
+  
+  defteffect <- defCondition(defteffect,
+                             condition = " t>=5",  
+                             formula = "2.5 + 5 / (1 + exp(2 * (t-5)))", 
+                             dist = "nonrandom")
+  
+  
+  # Modify the outcome variable formula
+  defOut <- defDataAdd(varname = "y", 
+                       formula = "a + b - 0.05 * k^2 + t_effect * A", 
+                       variance = 1)
   
   #--- add data generation code ---#
   ds <- genData(ncluster, def, id = "site")#site
-  ds <- addPeriods(ds, ncluster+3+5, "site", perName = "k") #create time periods for each site
+  ds <- addPeriods(ds, ncluster+3+10, "site", perName = "k") #create time periods for each site
   ds <- addCorGen(
     dtOld = ds, idvar = "site", 
     rho = 0.95, corstr = "ar1",
@@ -50,7 +69,7 @@ s_generate <- function(iter, coefA, ncluster) {
   #30 individuals per site per period and generate each individual-level outcome
   dd <- genCluster(ds, "timeID", numIndsVar = 10, level1ID = "id")
   dd <- addColumns(deft, dd)
-  dd <- addColumns(defteffect, dd)
+  dd <- addCondition(defteffect, dd, newvar = "t_effect")
   dd <- addColumns(defOut, dd)
   dd[, normk := (k - min(k))/(max(k) - min(k))]#scale time period into range 0-1
   
@@ -58,15 +77,15 @@ s_generate <- function(iter, coefA, ncluster) {
   
 }
 
-s_model <- function(train_data, coefA, mod) {
+s_model <- function(train_data, mod) {
   set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0")
 
   t_ex_mx=max(train_data$t)
   #true value of TATE
   t_values <- 1:t_ex_mx
-  true_tate = sum(coefA * 1 / (1 + 2*exp(-t_values)))/t_ex_mx
+  true_tate = mean(unique(train_data[t%in%t_values,t_effect]))
   #true value of LTE
-  true_lte = coefA * 1 / (1 + 2*exp(-t_ex_mx))
+  true_lte = unique(train_data[t==t_ex_mx ,"t_effect"])
   ######Bayesian estimation of  TATE & LTE#############
   # Define the knots based on the training data
   knots_train <- quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])
@@ -139,66 +158,55 @@ s_model <- function(train_data, coefA, mod) {
   gam_lte <- smooth_t_values[t_ex_mx]
   
   model_results <- data.table(true_tate,true_lte,bayes_tate,bayes_lte,covered_bayes_tate,covered_bayes_lte,
-                              gam_tate,gam_lte,div,num_max_tree_depth,  loo_data)
+                              gam_tate,gam_lte,div,num_max_tree_depth,loo_data)
   return(model_results)
   
   
 }
 
-s_single_rep <- function(iter, coefA, ncluster, mod) {
+s_single_rep <- function(iter, ncluster, mod) {
   
-  train_data <- s_generate(iter, coefA, ncluster)
+  train_data <- s_generate(iter, ncluster)
   
-  model_results <- s_model(train_data, coefA, mod)
+  model_results <- s_model(train_data, mod)
   
   return(model_results)
 }
 
-s_replicate <- function(iter, coefA, ncluster, mod) {
-  model_results = s_single_rep(iter, coefA, ncluster, mod)
-  return(data.table(iter=iter, coefA = coefA , ncluster=ncluster, model_results))
+s_replicate <- function(iter, ncluster, mod) {
+  model_results = s_single_rep(iter, ncluster, mod)
+  return(data.table(iter=iter, ncluster=ncluster, model_results))
 }
 
 
-scenarios = expand.grid(coefA= 5,ncluster=10)
+scenarios = expand.grid(ncluster=10)
 i=1
 nsim=150
-coefA = scenarios[i,"coefA"]
 ncluster= scenarios[i,"ncluster"]
+# res <- replicate(1, s_replicate(iter=1,ncluster=ncluster,
+#                                 mod=mod
+#                                     ))
+# 
+# res <- parallel::mclapply(
+#   X = 1 : nsim, 
+#   FUN = function(x) s_replicate(iter=x,coefA = coefA,ncluster=ncluster,
+#                                 mod=mod),
+#   mc.cores = 4)
+
 
 args <- commandArgs(trailingOnly = TRUE)
 iter <- as.numeric(args[1])  # Get the iteration number from the job array index
 
-result <- s_replicate(iter=iter,  coefA = coefA, ncluster=ncluster, mod=mod)
+result <- s_replicate(iter=iter,  ncluster=ncluster, mod=mod)
 
-
-# sjob <- Slurm_lapply(1:nsim,
-#                FUN=s_replicate,
-#                coefA = coefA,
-#                ncluster = ncluster,
-#                mod=mod,
-#                njobs = 30,
-#                tmp_path = "/gpfs/scratch/dw2625",
-#                job_name = "BS_140",
-#                sbatch_opt = list(time = "24:00:00",partition = "cpu_short", `mem-per-cpu` = "10G"),
-#                export = c("s_define","s_generate","s_model","s_single_rep"),
-#                plan = "wait",
-#                overwrite=TRUE)
-# res <- Slurm_collect(sjob) # data is a list
-# #res<- site_plasma_all[lapply(site_plasma_all, function(x) length(x))>1] #filter out the error message
-# res <- rbindlist(res) # converting list to data.table
-
-#date_stamp <- gsub("-", "", Sys.Date())
-dir.create(file.path("/gpfs/data/troxellab/danniw/scratch/m2_increasing_time_vary_trt_v2"), showWarnings = FALSE)
+dir.create(file.path("/gpfs/data/troxellab/danniw/scratch/m2_inc_decreasing_time_vary_trt_v3"), showWarnings = FALSE)
 
 # Write the result to a file
 output_filename <- paste0("output_iter_", iter, ".RData")
 #save(result, file=output_filename)
 
-save(result, file = paste0("/gpfs/data/troxellab/danniw/scratch/m2_increasing_time_vary_trt_v2/", output_filename))
+save(result, file = paste0("/gpfs/data/troxellab/danniw/scratch/m2_inc_decreasing_time_vary_trt_v3/", output_filename))
 
-#result <- cbind(res)
 
-#save(res, file = paste0("./scenarios_fixed_coefA",coefA,"ncluster",ncluster,".rda"))
 
 
