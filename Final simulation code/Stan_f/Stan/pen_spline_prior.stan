@@ -18,12 +18,12 @@ parameters {
   real<lower=1e-3> sigma_beta_star; // std for the beta_star coefficients (sigma_beta_star)
   real<lower=1e-3> sigma_b;         // std for cluster-level study time effect spline coefficients (sigma_b)
   real alpha;                       // intercept term (alpha)
-  real lambda;       // regularization parameters for smoothness (lambda)
-  real<lower=1e-3> sigma_beta;      // std for the beta coefficients (sigma_beta)
+   real<lower=1e-3> sigma_beta;      // std for the beta coefficients (sigma_beta)
   matrix[num_clusters, num_basis] b_cluster_raw; // raw cluster-level study time effect spline coefficients (non-central parameterization)
   vector[num_basis] beta;           // overall study time spline coefficients (beta)
   vector[num_basis] beta_star;      // time varying treatment effect spline coefficients (beta_star)
-
+  real<lower=0> sigma_gamma_1;
+  real<lower=0> sigma_gamma_2;
 }
 
 transformed parameters {
@@ -47,12 +47,12 @@ model {
   sigma_b ~ student_t(3, 0, 2.5);    // prior for cluster-level study time effect spline std (sigma_b)
   sigma_beta_star ~ std_normal();   // prior for beta_star std (sigma_beta_star)
   sigma_beta ~ std_normal();        // prior for std of beta coefficients (sigma_beta)
-  lambda ~ student_t(3, 0, 2.5);    // prior for regularization parameters (lambda)
-  
+  sigma_gamma_1 ~ inv_gamma(.001, .001); 
+  sigma_gamma_2 ~ inv_gamma(.001, .001); 
 
    // Multivariate normal priors for beta_raw and beta_star_raw with penalty matrices P and P_t
-  beta ~ multi_normal(rep_vector(0, num_basis), lambda*lambda * inverse(P));
-  beta_star ~ multi_normal(rep_vector(0, num_basis), lambda*lambda * inverse(P_t));
+  beta ~ multi_normal(rep_vector(0, num_basis), sigma_gamma_1 * inverse(P));
+  beta_star ~ multi_normal(rep_vector(0, num_basis), sigma_gamma_2 * inverse(P_t));
   to_vector(b_cluster_raw) ~ std_normal(); 
 
   // Likelihood function
