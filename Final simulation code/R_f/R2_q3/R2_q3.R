@@ -1,6 +1,3 @@
-#\item \comments{Figure 5. I suggest including results for the Bayesian cluster-specific time-varying effect model in figure 5 so we can see what the ``penalty'' is for including random treatment effects when none exist. Clearly this is a model choice the analyst must make without knowing the true answer.}
-
-#\todo{use Figure 3 scenarios 2(time varying effect without cluster specific), fit the Bayesian cluster specific time-varying effect model.}
 library(simstudy)
 library(data.table)
 library(mgcv)
@@ -11,7 +8,7 @@ library(brms)
 library(dplyr)
 library(loo)
 library(slurmR)
-library(fda)
+
 #references:https://www.rdatagen.net/post/2022-12-13-modeling-the-secular-trend-in-a-stepped-wedge-design/
 #references:https://www.rdatagen.net/post/2022-11-01-modeling-secular-trend-in-crt-using-gam/
 set_cmdstan_path(path = "/gpfs/share/apps/cmdstan/2.25.0") 
@@ -93,38 +90,44 @@ s_model <- function(train_data, mod) {
   true_lte = mean(train_data[t == t_ex_mx, t_effect])
   ######Bayesian estimation of  TATE & LTE#############
   # Define the knots based on the training data
-  knots_train <- quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])
-  #basis matrix for study time
-  B_train <- predict(splines::bs(train_data$k, degree=3, knots=quantile(train_data$k, probs=seq(0, 1, length=6)[-c(1, 6)])))
   
-  knots_t <- quantile(train_data$t, probs=seq(0, 1, length=6)[-c(1, 6)])
-  #basis matrix for exposure time
-  B_t <- predict(splines::bs(train_data$t, degree=3, knots=quantile(train_data$t, probs=seq(0, 1, length=6)[-c(1, 6)])))
+  #basis matrix for study time
+  B_train <- splines::bs(train_data$k, df = 10, intercept = T, degree = 3)
+  
+  S <- max(train_data$k)
+  B_k <-  splines::bs(1:S, df = 10, intercept = T, degree = 3)
+  
+  alpha = .1
+  diff0 = diag(1, S, S)
+  diff2 = matrix(rep(c(1,-2,1, rep(0, S-2)), S-2)[1:((S-2)*S)], S-2, S, byrow = TRUE)
+  P0 = t(B_k) %*% t(diff0) %*% diff0 %*% B_k
+  P2 = t(B_k) %*% t(diff2) %*% diff2 %*% B_k
+  P = PenMat_k= solve(alpha * P0 + (1-alpha) * P2)
+  
+  
+  B_train_t <-  splines::bs(train_data$t, df = 10, intercept = T, degree = 3)
   #unique(B_t)
   # Compute the B-spline basis for the test set using the same knots from the training data
-  B_test_t <- predict(splines::bs(c(0: t_ex_mx), degree=3, knots=knots_t))[-1,]#-1:remove t=0
+  B_test_t <-  splines::bs(c(0: t_ex_mx), df = 10, intercept = T, degree = 3)[-1, ]
   
   
-  # Create the penalty matrix using the same number of basis functions
-  B_basis <- create.bspline.basis(rangeval=range(train_data$k), nbasis=7, norder=4)
+  #basis matrix for exposure time
+  S_t <- t_ex_mx
+  B_t <-  splines::bs(1:S_t, df = 10, intercept = T, degree = 3)
+  alpha = .1
+  diff0 = diag(1, S_t, S_t)
+  diff2 = matrix(rep(c(1,-2,1, rep(0, S_t-2)), S_t-2)[1:((S_t-2)*S_t)], S_t-2, S_t, byrow = TRUE)
+  P0_t = t(B_t) %*% t(diff0) %*% diff0 %*% B_t
+  P2_t = t(B_t) %*% t(diff2) %*% diff2 %*% B_t
+  P_t = PenMat_t= solve(alpha * P0_t + (1-alpha) * P2_t)
   
-  # Compute the penalty matrix for the second derivative
-  P <- bsplinepen(B_basis, Lfdobj=2)
-  
-  B_basis_t <- create.bspline.basis(rangeval=range(train_data$t), nbasis=7, norder=4)
-  
-  # Compute the penalty matrix for the second derivative
-  P_t <- bsplinepen(B_basis_t, Lfdobj=2)
-  
-  P <- P + diag(1e-6, nrow(P))
-  P_t <- P_t + diag(1e-6, nrow(P_t))
   
   
   stan_data <- list(num_data = nrow(train_data),
                     num_basis = ncol(B_train),
                     num_t_ex = nrow(B_test_t),
                     B = t(B_train),
-                    B_star = t(B_t),
+                    B_star = t(B_train_t),
                     B_test_star=t(B_test_t),
                     A = train_data$A,
                     y = train_data$y,
@@ -205,16 +208,6 @@ scenarios = expand.grid(ncluster=10)
 i=1
 nsim=150
 ncluster= scenarios[i,"ncluster"]
-# res <- replicate(1, s_replicate(iter=1,ncluster=ncluster,
-#                                 mod=mod
-#                                     ))
-# 
-# res <- parallel::mclapply(
-#   X = 1 : nsim, 
-#   FUN = function(x) s_replicate(iter=x,coefA = coefA,ncluster=ncluster,
-#                                 mod=mod),
-#   mc.cores = 4)
-
 
 job <- Slurm_lapply(
   X = 1:150,
@@ -226,7 +219,7 @@ job <- Slurm_lapply(
   job_name = "sim_1",
   tmp_path = "/gpfs/scratch/dw2625",
   plan = "wait",
-  sbatch_opt = list(time = "48:00:00", partition = "cpu_medium", `mem-per-cpu` = "8G"),
+  sbatch_opt = list(time = "24:00:00", partition = "cpu_medium", `mem-per-cpu` = "8G"),
   export = c("s_generate", "s_model","s_single_rep"),
   overwrite = TRUE
 )
@@ -236,7 +229,7 @@ res <- rbindlist(res)
 
 date_stamp <- gsub("-", "", Sys.Date())
 dir.create(file.path("/gpfs/home/dw2625/r/Review_sim/results/", date_stamp), showWarnings = FALSE)
-save(res, file = paste0("/gpfs/home/dw2625/r/Review_sim/results/", date_stamp, "/time_varying_gen_m3fit_update.rda"))
+save(res, file = paste0("/gpfs/home/dw2625/r/Review_sim/results/", date_stamp, "/inc_dec_time_varying_pen_spline.rda"))
 
 
 
